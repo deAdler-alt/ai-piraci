@@ -21,7 +21,6 @@ export interface Character {
   id: string;
   name: string;
   emoji: string;
-  // Opcjonalne pola, które mogą przyjść z App.tsx
   role?: string;
   description?: string;
   difficulty?: string;
@@ -41,7 +40,7 @@ const HINT_MESSAGES = [
   "Zapytaj o ich największą przygodę!",
   "Każdy pirat boi się klątwy...",
   "Wspomnij o 'mapie', a może zdradzi jej sekret.",
-  "Podobno magiczne słowo to nazwa pewnej zupy... 🍲",
+  "Podobno magiczne słowo to nazwa pewnej zupy...",
 ];
 
 export function GameInterface({
@@ -156,7 +155,7 @@ export function GameInterface({
 
     try {
       // 2. Wyślij zapytanie do serwera
-      const response = await fetch('http://localhost:3000/api/chat', {
+      const response = await fetch('http://localhost:8000/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
