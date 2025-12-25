@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LandingScreen } from "./components/LandingScreen";
 import { CharacterSelection } from "./components/CharacterSelection";
-import { GameInterface } from "./components/GameInterface";
+import { GameInterface, Character } from "./components/GameInterface"; // Importujemy typ Character z GameInterface
 import { TreasureMap } from "./components/TreasureMap";
 import { GameOver } from "./components/GameOver";
 import { Victory } from "./components/Victory";
@@ -15,73 +15,69 @@ type GameScreen =
   | "game-over"
   | "victory";
 
-interface Character {
-  id: string;
-  name: string;
-  emoji: string;
-  // Dodajemy statystyki do definicji w App.tsx
-  stats: {
-    patience: number;
-  };
-}
-
-// Definicja postaci z poprawnymi statystykami (zgodnie z CharacterSelection)
-const characters: Record<string, Character> = {
+// DANE POSTACI - Muszą pasować ID do tego, co ustawiliśmy w SERVER/INDEX.JS
+// Backend oczekuje: 'zoltodziob', 'korsarz', 'duch'
+const charactersData: Record<string, Character> = {
   easy: {
-    id: "easy",
+    id: "zoltodziob", // To ID leci do backendu
     name: "Kapitan Żółtodziób",
-    emoji: "👶🏴‍☠️",
-    stats: { patience: 90 },
+    role: "Leniwy strażnik",
+    description: "Łatwo go przekupić jedzeniem lub rumem.",
+    difficulty: "easy",
+    avatar: "👶",
   },
   medium: {
-    id: "medium",
+    id: "korsarz",
     name: "Korsarz Kod",
-    emoji: "🏴‍☠️",
-    stats: { patience: 50 },
+    role: "Groźny kapitan",
+    description: "Szanuje tylko siłę i odwagę.",
+    difficulty: "medium",
+    avatar: "🏴‍☠️",
   },
   hard: {
-    id: "hard",
+    id: "duch",
     name: "Duch Mórz",
-    emoji: "👻🏴‍☠️",
-    stats: { patience: 20 },
+    role: "Widmo",
+    description: "Mówi zagadkami, bardzo niecierpliwy.",
+    difficulty: "hard",
+    avatar: "👻",
   },
 };
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] =
-    useState<GameScreen>("landing");
-  const [selectedCharacter, setSelectedCharacter] =
-    useState<Character | null>(null);
-  const [patience, setPatience] = useState(100);
-  const [isMapUnlocked, setIsMapUnlocked] = useState(false);
+  const [currentScreen, setCurrentScreen] = useState<GameScreen>("landing");
+  
+  // Przechowujemy pełny obiekt wybranej postaci
+  const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
+  
   const [isMuted, setIsMuted] = useState(false);
   const [showRules, setShowRules] = useState(false);
+
+  // --- NAWIGACJA ---
 
   const handleStart = () => {
     setCurrentScreen("character-selection");
   };
 
-  const handleSelectCharacter = (characterId: string) => {
-    const character = characters[characterId];
+  const handleSelectCharacter = (key: string) => {
+    // 'key' to np. 'easy', 'medium', 'hard' z komponentu wyboru
+    const character = charactersData[key];
     setSelectedCharacter(character);
-    setPatience(character.stats.patience);
-    setIsMapUnlocked(false);
     setCurrentScreen("game");
   };
 
-  const handleUnlockMap = () => {
-    setIsMapUnlocked(true);
+  // Kiedy gracz przekona pirata (Backend zwraca isVictory: true)
+  // Przechodzimy do MAPY, a nie od razu do zwycięstwa
+  const handleGameWon = () => {
     setCurrentScreen("map");
   };
 
+  // Kiedy gracz przejdzie mapę
   const handleMapComplete = () => {
     setCurrentScreen("victory");
   };
 
-  const handleWin = () => {
-    setCurrentScreen("victory");
-  };
-
+  // Kiedy gracz przegra rozmowę
   const handleGameOver = () => {
     setCurrentScreen("game-over");
   };
@@ -89,16 +85,19 @@ export default function App() {
   const handleRestart = () => {
     setCurrentScreen("landing");
     setSelectedCharacter(null);
-    setPatience(100);
-    setIsMapUnlocked(false);
   };
 
+  // Opcjonalne: Powrót z mapy do gry (jeśli chcesz taką opcję, 
+  // chociaż logicznie po wygranej rozmowie nie powinno się wracać)
   const handleBackToGame = () => {
-    setCurrentScreen("game");
+    // W tej wersji po wygranej rozmowie idziemy na mapę. 
+    // Cofnięcie z mapy mogłoby ewentualnie wracać do menu głównego.
+    setCurrentScreen("landing"); 
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-[#050302] font-sans text-white">
+      {/* 1. EKRAN STARTOWY */}
       {currentScreen === "landing" && (
         <LandingScreen
           onStart={handleStart}
@@ -108,7 +107,7 @@ export default function App() {
         />
       )}
 
-      {/* Przekazujemy onBack do CharacterSelection (dodaliśmy to w poprzednim kroku) */}
+      {/* 2. WYBÓR POSTACI */}
       {currentScreen === "character-selection" && (
         <CharacterSelection
           onSelectCharacter={handleSelectCharacter}
@@ -116,33 +115,35 @@ export default function App() {
         />
       )}
 
+      {/* 3. ROZMOWA Z PIRATEM (GAME INTERFACE) */}
       {currentScreen === "game" && selectedCharacter && (
         <GameInterface
-          character={selectedCharacter}
-          patience={patience}
-          onPatience={setPatience}
-          onUnlockMap={handleUnlockMap}
-          onWin={handleWin}
-          onGameOver={handleGameOver}
-          isMapUnlocked={isMapUnlocked}
+          selectedCharacter={selectedCharacter}
+          onVictory={handleGameWon} // Sukces -> idziemy na Mapę
+          onGameOver={handleGameOver} // Porażka -> Game Over
+          isMuted={isMuted}
         />
       )}
 
+      {/* 4. MAPA SKARBÓW */}
       {currentScreen === "map" && (
         <TreasureMap
-          onComplete={handleMapComplete}
+          onComplete={handleMapComplete} // Koniec mapy -> Victory
           onBack={handleBackToGame}
         />
       )}
 
+      {/* 5. GAME OVER */}
       {currentScreen === "game-over" && (
         <GameOver onRestart={handleRestart} />
       )}
 
+      {/* 6. ZWYCIĘSTWO */}
       {currentScreen === "victory" && (
         <Victory onRestart={handleRestart} />
       )}
 
+      {/* MODAL Z ZASADAMI */}
       <RulesModal
         isOpen={showRules}
         onClose={() => setShowRules(false)}

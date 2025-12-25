@@ -17,18 +17,23 @@ interface Message {
   timestamp: number;
 }
 
+export interface Character {
+  id: string;
+  name: string;
+  emoji: string;
+  // Opcjonalne pola, które mogą przyjść z App.tsx
+  role?: string;
+  description?: string;
+  difficulty?: string;
+  avatar?: string;
+}
+
+// 2. Dostosowane propsy (to co faktycznie wysyła teraz App.tsx)
 interface GameInterfaceProps {
-  character: {
-    id: string;
-    name: string;
-    emoji: string;
-  };
-  patience: number;
-  onPatience: (newPatience: number) => void;
-  onUnlockMap: () => void;
-  onWin: () => void;
+  selectedCharacter: Character; // Zmiana nazwy z 'character'
+  onVictory: () => void;      // Zamiast onWin i onUnlockMap
   onGameOver: () => void;
-  isMapUnlocked: boolean;
+  isMuted: boolean;           // Nowy prop
 }
 
 const HINT_MESSAGES = [
@@ -40,14 +45,23 @@ const HINT_MESSAGES = [
 ];
 
 export function GameInterface({
-  character,
-  patience,
-  onPatience,
-  onUnlockMap,
-  onWin,
+  selectedCharacter,
+  onVictory,
   onGameOver,
-  isMapUnlocked,
+  isMuted,
 }: GameInterfaceProps) {
+  
+  const character = selectedCharacter;
+  
+  // Cierpliwość jest teraz lokalna (zarządzana przez backend), a nie z propsów
+  const [patience, setPatience] = useState(50); 
+  const onPatience = (val: number) => setPatience(val);
+
+  // Mapowanie funkcji zwycięstwa
+  const onWin = onVictory;
+  const onUnlockMap = onVictory;
+  const isMapUnlocked = false;
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -56,12 +70,14 @@ export function GameInterface({
       timestamp: Date.now(),
     },
   ]);
+
   const [inputValue, setInputValue] = useState("");
   const [hintsLeft, setHintsLeft] = useState(5);
   const [isThinking, setIsThinking] = useState(false);
   const [pirateEmotion, setPirateEmotion] = useState<
     "idle" | "thinking" | "angry" | "happy"
   >("idle");
+
   // Stan do obsługi animacji odblokowania mapy
   const [showUnlockAnimation, setShowUnlockAnimation] =
     useState(false);
@@ -103,7 +119,7 @@ export function GameInterface({
   const handleSurrender = () => {
     if (
       confirm(
-        "Czy na pewno chcesz się poddać i oddać walkowerem?",
+        "Czy na pewno chcesz się poddać siusiumajtku?",
       )
     ) {
       onGameOver();
@@ -117,122 +133,80 @@ export function GameInterface({
     // 2. Po zakończeniu animacji (np. 3 sekundy), przełącz ekran
     setTimeout(() => {
       onUnlockMap();
-      // setShowUnlockAnimation(false); // Nie trzeba resetować, bo komponent zostanie odmontowany
     }, 3000);
   };
 
-  const generatePirateResponse = (
-    playerMessage: string,
-  ): string => {
-    const lowerMessage = playerMessage.toLowerCase();
+  const handleSendMessage = async (textOverride?: string) => {
+    // Pozwala wywołać funkcję z parametrem (dla STT w przyszłości) lub użyć inputa
+    const text = textOverride || inputValue.trim();
+    if (!text || isThinking) return;
 
-    // Easter egg - "zupa" = instant win
-    if (lowerMessage.includes("zupa")) {
-      setTimeout(() => onWin(), 1500);
-      return "ZUPA?! Moja babcia robiła taką samą! 🍲 Wzruszyłeś stargo pirata... Bierz skarb, jest twój!";
-    }
+    setInputValue(""); // Czyścimy input
 
-    // Easter egg - "mapa" = unlock map
-    if (
-      (lowerMessage.includes("mapa") ||
-        lowerMessage.includes("mapę")) &&
-      !isMapUnlocked
-    ) {
-      setTimeout(() => triggerMapUnlock(), 1000); // Uruchamiamy naszą nową funkcję z animacją
-      return "Mapa?! Kto ci o niej powiedział?! ...No dobrze, widzę, że masz bystre oko. Oto ona! 🗺️";
-    }
-
-    // Prosta analiza
-    const positiveWords = [
-      "proszę",
-      "dziękuję",
-      "dzielny",
-      "kapitanie",
-      "statek",
-      "morze",
-      "legenda",
-      "podziwiam",
-    ];
-    const negativeWords = [
-      "głupi",
-      "brzydki",
-      "śmierdzi",
-      "szczur",
-      "lądowy",
-      "kłamiesz",
-    ];
-
-    const isPositive = positiveWords.some((w) =>
-      lowerMessage.includes(w),
-    );
-    const isNegative = negativeWords.some((w) =>
-      lowerMessage.includes(w),
-    );
-
-    if (isNegative)
-      return "Coś ty powiedział?! Uważaj na język, majtku! ⚔️";
-    if (isPositive)
-      return "Hahaha! Podobają mi się twoje słowa. Mów dalej...";
-
-    const randomResponses = [
-      "Yhm... Słucham dalej.",
-      "Mój skarb nie jest dla byle kogo.",
-      "Przekonaj mnie bardziej!",
-      "Papuga mojego dziadka gadała ciekawiej... 🦜",
-      "Arrr, nudzisz mnie.",
-    ];
-    return randomResponses[
-      Math.floor(Math.random() * randomResponses.length)
-    ];
-  };
-
-  const handleSendMessage = () => {
-    if (!inputValue.trim() || isThinking) return;
-
-    const newMsg: Message = {
+    // 1. Dodaj wiadomość gracza (Lokalnie)
+    const userMessage: Message = {
       id: Date.now().toString(),
-      text: inputValue,
-      isPlayer: true,
+      text: text,
+      isPlayer: true, // Ważne: Twój interfejs używa flagi isPlayer, a nie stringa 'sender'
       timestamp: Date.now(),
     };
-    setMessages((prev) => [...prev, newMsg]);
+    setMessages((prev) => [...prev, userMessage]);
+    
+    setIsThinking(true); // Włączamy animację "Pirat skrobie odpowiedź..."
 
-    const currentInput = inputValue;
-    setInputValue("");
-    setIsThinking(true);
-    setPirateEmotion("thinking");
+    try {
+      // 2. Wyślij zapytanie do serwera
+      const response = await fetch('http://localhost:3000/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          characterId: character.id, // Używamy propsa character.id
+          currentPatience: patience, // Używamy propsa patience
+        }),
+      });
 
-    const negativeWords = [
-      "głupi",
-      "brzydki",
-      "śmierdzi",
-      "szczur",
-      "kłamiesz",
-    ];
-    const isNegative = negativeWords.some((w) =>
-      currentInput.toLowerCase().includes(w),
-    );
-    const patienceCost = isNegative ? 25 : 10; // Koszt cierpliwości
+      if (!response.ok) throw new Error("Błąd serwera");
 
-    onPatience(Math.max(0, patience - patienceCost));
+      const data = await response.json();
 
-    setTimeout(
-      () => {
-        const response = generatePirateResponse(currentInput);
-        const pirateMsg: Message = {
-          id: (Date.now() + 1).toString(),
-          text: response,
-          isPlayer: false,
-          timestamp: Date.now(),
-        };
-        setMessages((prev) => [...prev, pirateMsg]);
-        setIsThinking(false);
-        setPirateEmotion(patience < 30 ? "angry" : "idle");
-      },
-      1500 + Math.random() * 1000,
-    );
+      // 3. Dodaj odpowiedź AI
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: data.reply, // Tekst od Gemini
+        isPlayer: false,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, aiMessage]);
+
+      // 4. Aktualizuj Cierpliwość (przez props onPatience)
+      // Backend zwraca 'patienceChange' (np. -10), my musimy obliczyć nową wartość
+      const newPatience = Math.min(100, Math.max(0, patience + data.patienceChange));
+      onPatience(newPatience); // Wywołujemy funkcję z rodzica (App.tsx)
+
+      // 5. Obsługa stanów gry (Zwycięstwo / Porażka)
+      if (data.isVictory) {
+         // Jeśli AI uznało, że wygrałeś -> Uruchom Twoją animację mapy
+         setTimeout(() => triggerMapUnlock(), 1500); 
+      } else if (data.isGameOver || newPatience <= 0) {
+         setTimeout(onGameOver, 2000);
+      }
+
+    } catch (error) {
+      console.error("Błąd AI:", error);
+      // Fallback: Wiadomość o błędzie w czacie
+      setMessages((prev) => [...prev, {
+        id: Date.now().toString(),
+        text: "*Kaszle i krztusi się* (Błąd połączenia z serwerem. Sprawdź konsolę!)",
+        isPlayer: false,
+        timestamp: Date.now(),
+      }]);
+    } finally {
+      setIsThinking(false);
+    }
   };
 
+  
   const handleHint = () => {
     if (hintsLeft > 0) {
       setHintsLeft((prev) => prev - 1);
@@ -555,9 +529,8 @@ export function GameInterface({
                     onChange={(e) =>
                       setInputValue(e.target.value)
                     }
-                    onKeyPress={(e) =>
-                      e.key === "Enter" && handleSendMessage()
-                    }
+
+                    onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
                     placeholder="Zadawaj pytania piratowi..."
                     className="w-full bg-white/50 border-b-2 border-[#8B4513] px-3 py-2 text-[#3e2723] placeholder-[#a1887f] focus:outline-none focus:bg-white/80 focus:border-[#CD7F32] font-serif transition-colors text-[20px]"
                     disabled={isThinking}
@@ -566,7 +539,7 @@ export function GameInterface({
 
                 {/* PRZYCISK WYSYŁANIA */}
                 <motion.button
-                  onClick={handleSendMessage}
+                  onClick={() => handleSendMessage()}
                   disabled={isThinking || !inputValue.trim()}
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
