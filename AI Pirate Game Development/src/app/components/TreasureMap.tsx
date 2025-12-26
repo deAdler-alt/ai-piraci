@@ -65,6 +65,19 @@ export function TreasureMap({
     null,
   );
 
+  const playCoinSound = () => {
+  if (isMuted) return;
+  // Sekwencja dźwięków: Najpierw otwarcie, potem monety
+  const open = new Audio("/sounds/win_3_chest_open.mp3");
+  const coins = new Audio("/sounds/win_2_coins.mp3");
+  
+  open.volume = 0.6;
+  coins.volume = 0.6;
+
+  open.play();
+  setTimeout(() => coins.play(), 500); // Monety brzęczą pół sekundy po otwarciu
+  };
+
   const progress = useMotionValue(0);
 
   // Bezpieczna ścieżka (Idealnie zgrana z punktami poniżej)
@@ -74,7 +87,7 @@ export function TreasureMap({
 
   // --- LOGIKA ---
   useEffect(() => {
-    let interval: number;
+    let interval: NodeJS.Timeout;
     setCrewMessage(
       CREW_CHATTER[
         Math.floor(Math.random() * CREW_CHATTER.length)

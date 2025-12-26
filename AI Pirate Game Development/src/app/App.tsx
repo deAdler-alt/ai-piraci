@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { LandingScreen } from "./components/LandingScreen";
 import { CharacterSelection } from "./components/CharacterSelection";
-import { GameInterface, Character } from "./components/GameInterface"; // Importujemy typ Character z GameInterface
+import { GameInterface, Character } from "./components/GameInterface";
 import { TreasureMap } from "./components/TreasureMap";
 import { GameOver } from "./components/GameOver";
 import { Victory } from "./components/Victory";
 import { RulesModal } from "./components/RulesModal";
+import { Volume2, VolumeX } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 
 type GameScreen =
   | "landing"
@@ -15,89 +17,176 @@ type GameScreen =
   | "game-over"
   | "victory";
 
-// DANE POSTACI - Muszą pasować ID do tego, co ustawiliśmy w SERVER/INDEX.JS
-// Backend oczekuje: 'zoltodziob', 'korsarz', 'duch'
 const charactersData: Record<string, Character> = {
   easy: {
-    id: "zoltodziob", // To ID leci do backendu
+    id: "zoltodziob",
     name: "Kapitan Żółtodziób",
-    role: "Leniwy strażnik",
-    description: "Łatwo go przekupić jedzeniem lub rumem.",
-    difficulty: "easy",
+    emoji: "👶",
+    avatarFolder: "zoltodziob", // Wskazuje na public/characters/zoltodziob
+    description: "Łatwy przeciwnik",
     avatar: "👶",
   },
   medium: {
     id: "korsarz",
     name: "Korsarz Kod",
-    role: "Groźny kapitan",
-    description: "Szanuje tylko siłę i odwagę.",
-    difficulty: "medium",
+    emoji: "🏴‍☠️",
+    avatarFolder: "korsarz", // Wskazuje na public/characters/korsarz
+    description: "Średni przeciwnik",
     avatar: "🏴‍☠️",
   },
   hard: {
     id: "duch",
     name: "Duch Mórz",
-    role: "Widmo",
-    description: "Mówi zagadkami, bardzo niecierpliwy.",
-    difficulty: "hard",
+    emoji: "👻",
+    avatarFolder: "duch", // Wskazuje na public/characters/duch
+    description: "Trudny przeciwnik",
     avatar: "👻",
   },
 };
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<GameScreen>("landing");
-  
-  // Przechowujemy pełny obiekt wybranej postaci
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
-  
   const [isMuted, setIsMuted] = useState(false);
+  const [bgVolume, setBgVolume] = useState(0.3); 
   const [showRules, setShowRules] = useState(false);
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // --- AUDIO MANAGER ---
+  
+  // 1. Obsługa głośności, Mute i Ducking (Przyciszanie tła)
+  useEffect(() => {
+    if (audioRef.current) {
+      // LOGIKA DUCKINGU:
+      // Sprawdzamy czy to ekran końcowy (Victory/GameOver)
+      const isEndGame = currentScreen === "victory" || currentScreen === "game-over";
+      
+      // Jeśli tak, głośność to 20% ustawionej wartości. Jeśli nie - 100%.
+      const targetVolume = isEndGame ? bgVolume * 0.2 : bgVolume;
+      
+      // Aplikujemy głośność do elementu audio
+      audioRef.current.volume = Math.max(0, Math.min(1, targetVolume));
+
+      // Obsługa Play/Pause
+      if (isMuted) {
+        audioRef.current.pause();
+      } else {
+        // Próbujemy grać tylko jeśli muzyka jest zatrzymana
+        if (audioRef.current.paused) {
+            audioRef.current.play().catch(() => {
+                // Ignorujemy błędy autoplay (np. brak interakcji)
+            });
+        }
+      }
+    }
+  }, [isMuted, bgVolume, currentScreen]); // <--- Te zależności są kluczowe, żeby suwak i zmiana ekranu działały!
+
+
+  // 2. Obsługa efektów dźwiękowych (SFX) przy zmianie ekranu
+  useEffect(() => {
+    if (isMuted) return;
+
+    if (currentScreen === "game-over") {
+        const loseAudio = new Audio("/sounds/lose.mp3");
+        loseAudio.volume = 0.8;
+        loseAudio.play().catch(e => console.log("Audio error", e));
+    }
+  }, [currentScreen, isMuted]);
+
+  const handleStartMusic = () => {
+    if (audioRef.current && !isMuted) {
+      audioRef.current.play().catch((e) => console.error("Start music error:", e));
+    }
+  };
 
   // --- NAWIGACJA ---
-
   const handleStart = () => {
+    handleStartMusic();
     setCurrentScreen("character-selection");
   };
 
   const handleSelectCharacter = (key: string) => {
-    // 'key' to np. 'easy', 'medium', 'hard' z komponentu wyboru
     const character = charactersData[key];
     setSelectedCharacter(character);
     setCurrentScreen("game");
   };
 
-  // Kiedy gracz przekona pirata (Backend zwraca isVictory: true)
-  // Przechodzimy do MAPY, a nie od razu do zwycięstwa
-  const handleGameWon = () => {
-    setCurrentScreen("map");
-  };
-
-  // Kiedy gracz przejdzie mapę
-  const handleMapComplete = () => {
-    setCurrentScreen("victory");
-  };
-
-  // Kiedy gracz przegra rozmowę
-  const handleGameOver = () => {
-    setCurrentScreen("game-over");
-  };
-
+  const handleGameWon = () => setCurrentScreen("map");
+  const handleMapComplete = () => setCurrentScreen("victory");
+  const handleGameOver = () => setCurrentScreen("game-over");
+  
   const handleRestart = () => {
     setCurrentScreen("landing");
     setSelectedCharacter(null);
   };
-
-  // Opcjonalne: Powrót z mapy do gry (jeśli chcesz taką opcję, 
-  // chociaż logicznie po wygranej rozmowie nie powinno się wracać)
-  const handleBackToGame = () => {
-    // W tej wersji po wygranej rozmowie idziemy na mapę. 
-    // Cofnięcie z mapy mogłoby ewentualnie wracać do menu głównego.
-    setCurrentScreen("landing"); 
-  };
+  
+  const handleBackToGame = () => setCurrentScreen("landing");
 
   return (
-    <div className="min-h-screen bg-[#050302] font-sans text-white">
-      {/* 1. EKRAN STARTOWY */}
+    <div className="min-h-screen bg-[#050302] font-sans text-white relative overflow-hidden">
+      <audio ref={audioRef} loop src="/sounds/bg_music.mp3" />
+
+      {/* PIRACKI PANEL AUDIO */}
+      <div 
+        className="fixed bottom-6 right-6 z-[100] flex items-center gap-2"
+        onMouseEnter={() => setShowVolumeSlider(true)}
+        onMouseLeave={() => setShowVolumeSlider(false)}
+      >
+        <AnimatePresence>
+            {showVolumeSlider && (
+                <motion.div 
+                    initial={{ width: 0, opacity: 0, x: 20 }}
+                    animate={{ width: "auto", opacity: 1, x: 0 }}
+                    exit={{ width: 0, opacity: 0, x: 20 }}
+                    className="overflow-hidden"
+                >
+                    <div 
+                        className="flex items-center px-4 py-2 rounded-l-lg border-y-2 border-l-2 border-[#FFD700] shadow-xl mr-[-10px] pr-6"
+                        style={{
+                            backgroundColor: "#5d4037",
+                            backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 4px, rgba(0,0,0,0.2) 5px)",
+                        }}
+                    >
+                        <input 
+                            type="range" 
+                            min="0" max="1" step="0.05" 
+                            value={bgVolume} 
+                            onChange={(e) => {
+                                setBgVolume(parseFloat(e.target.value));
+                                if (isMuted && parseFloat(e.target.value) > 0) setIsMuted(false);
+                            }}
+                            className="w-24 h-2 rounded-lg appearance-none cursor-pointer bg-[#2a1b12] shadow-inner accent-[#FFD700]"
+                        />
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+
+        <motion.button 
+            onClick={() => setIsMuted(!isMuted)} 
+            whileHover={{ scale: 1.1, rotate: 5 }}
+            whileTap={{ scale: 0.95 }}
+            className="relative w-14 h-14 rounded-full border-4 shadow-[0_4px_10px_rgba(0,0,0,0.6)] flex items-center justify-center z-20 overflow-hidden"
+            style={{
+                backgroundColor: isMuted ? "#7f1d1d" : "#5d4037",
+                borderColor: "#FFD700",
+            }}
+        >
+             <div
+                className="absolute inset-0 opacity-30 pointer-events-none"
+                style={{
+                  backgroundImage:
+                    "repeating-linear-gradient(45deg, transparent, transparent 5px, #000 5px, #000 7px)",
+                }}
+            />
+            <div className="relative z-10 text-[#FFD700] drop-shadow-md">
+                {isMuted ? <VolumeX size={28} /> : <Volume2 size={28} />}
+            </div>
+        </motion.button>
+      </div>
+
       {currentScreen === "landing" && (
         <LandingScreen
           onStart={handleStart}
@@ -107,7 +196,6 @@ export default function App() {
         />
       )}
 
-      {/* 2. WYBÓR POSTACI */}
       {currentScreen === "character-selection" && (
         <CharacterSelection
           onSelectCharacter={handleSelectCharacter}
@@ -115,39 +203,28 @@ export default function App() {
         />
       )}
 
-      {/* 3. ROZMOWA Z PIRATEM (GAME INTERFACE) */}
       {currentScreen === "game" && selectedCharacter && (
         <GameInterface
           selectedCharacter={selectedCharacter}
-          onVictory={handleGameWon} // Sukces -> idziemy na Mapę
-          onGameOver={handleGameOver} // Porażka -> Game Over
+          onVictory={handleGameWon}
+          onDirectVictory={handleMapComplete}
+          onGameOver={handleGameOver}
           isMuted={isMuted}
         />
       )}
 
-      {/* 4. MAPA SKARBÓW */}
       {currentScreen === "map" && (
         <TreasureMap
-          onComplete={handleMapComplete} // Koniec mapy -> Victory
+          onComplete={handleMapComplete}
           onBack={handleBackToGame}
+          isMuted={isMuted} // Przekazujemy stan wyciszenia
         />
       )}
 
-      {/* 5. GAME OVER */}
-      {currentScreen === "game-over" && (
-        <GameOver onRestart={handleRestart} />
-      )}
-
-      {/* 6. ZWYCIĘSTWO */}
-      {currentScreen === "victory" && (
-        <Victory onRestart={handleRestart} />
-      )}
-
-      {/* MODAL Z ZASADAMI */}
-      <RulesModal
-        isOpen={showRules}
-        onClose={() => setShowRules(false)}
-      />
+      {currentScreen === "game-over" && <GameOver onRestart={handleRestart} />}
+      {currentScreen === "victory" && (<Victory onRestart={handleRestart} isMuted={isMuted} />)}
+      
+      <RulesModal isOpen={showRules} onClose={() => setShowRules(false)} />
     </div>
   );
 }
