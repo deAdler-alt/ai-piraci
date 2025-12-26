@@ -11,35 +11,24 @@ import {
 } from "lucide-react";
 
 // =================================================================
-// 🛠️ STREFA KONFIGURACJI DLA DEVELOPERÓW (BACKEND / KIE.AI)
+// STREFA KONFIGURACJI (BACKEND)
 // =================================================================
 
 const DEV_CONFIG = {
-  // 1. ENDPOINT: Tu wklejcie adres Waszego API (np. Kie.ai / własny backend)
-  // Domyślnie zostawiam OpenRouter dla testów frontendu.
-  API_URL: "https://openrouter.ai/api/v1/chat/completions",
+  // 1. LLM (Kie.ai / Chat)
+  LLM_ENDPOINT: "https://api.kie.ai/v1/chat/completions", // Przykładowy endpoint Kie
+  LLM_MODEL: "kie-general-v1", // Nazwa modelu w Kie.ai
+  // Klucz pobierany z .env (VITE_KIE_API_KEY)
+  LLM_API_KEY: (import.meta as any).env.VITE_KIE_API_KEY,
 
-  // 2. KLUCZ API: Pobierany z .env, ale możecie tu wpisać stringa na sztywno do testów.
-  // Zmienna w .env musi nazywać się: VITE_OPENROUTER_API_KEY
-  API_KEY: (import.meta as any).env.VITE_OPENROUTER_API_KEY || "",
-
-  // 3. MODEL: Nazwa modelu, którego używacie (np. 'gpt-4', 'kie-custom-model')
-  MODEL_NAME: "meta-llama/llama-3.2-3b-instruct:free",
+  // 2. STT (Speech-to-Text / OpenRouter / Whisper)
+  // Jeśli OpenRouter nie obsługuje audio bezpośrednio, tu wpiszcie adres proxy lub OpenAI Whisper
+  STT_ENDPOINT: "https://openrouter.ai/api/v1/audio/transcriptions", 
+  // Klucz pobierany z .env (VITE_OPENROUTER_API_KEY)
+  STT_API_KEY: (import.meta as any).env.VITE_OPENROUTER_API_KEY,
 };
 
-// INSTRUKCJA DLA LLM (System Prompt):
-// Frontend oczekuje, że model rozpocznie odpowiedź od tagu emocji:
-// [HAPPY], [ANGRY], [NEUTRAL] lub [GIVE_MAP] (jeśli gracz wygrał).
-// Przykład response: "[HAPPY] Dobrze gadasz! Podoba mi się to."
-
-// =================================================================
-
-const PERSONA_TRAITS: Record<string, string> = {
-  zoltodziob: "Jesteś Kapitan Żółtodziób. Naiwny, boisz się duchów, kochasz jedzenie.",
-  korsarz: "Jesteś Korsarz Kod. Cyniczny, logiczny, szanujesz spryt.",
-  duch: "Jesteś Duchem Mórz. Depresyjny, poetycki, mówisz zagadkami.",
-};
-
+// INSTRUKCJA SYSTEMOWA DLA AI
 const BASE_SYSTEM_PROMPT = `
 Jesteś piratem strażnikiem mapy.
 ZASADY:
@@ -49,6 +38,15 @@ ZASADY:
 `;
 
 const FIBONACCI_LEVELS = [5, 10, 15, 25];
+
+// 5 KREATYWNYCH PODPOWIEDZI
+const HINT_MESSAGES = [
+  "Piraci szanują tylko tych, co patrzą im prosto w oczy... i znają nawigację.",
+  "Nie proś. Negocjuj. Co możesz mu dać w zamian za mapę?",
+  "Podobno ten kapitan boi się własnego cienia. Wykorzystaj to.",
+  "Zmuś go do myślenia. Logika to broń potężniejsza niż szabla.",
+  "Opowiedz mu historię o potworze, którego 'widziałeś' na wschodzie.",
+];
 
 // --- TYPY ---
 interface Message {
@@ -77,6 +75,12 @@ interface GameInterfaceProps {
   isMuted: boolean;
 }
 
+const PERSONA_TRAITS: Record<string, string> = {
+  zoltodziob: "Jesteś Kapitan Żółtodziób. Naiwny, boisz się duchów, kochasz jedzenie.",
+  korsarz: "Jesteś Korsarz Kod. Cyniczny, logiczny, szanujesz spryt.",
+  duch: "Jesteś Duchem Mórz. Depresyjny, poetycki, mówisz zagadkami.",
+};
+
 export function GameInterface({
   selectedCharacter,
   onVictory,
@@ -102,11 +106,13 @@ export function GameInterface({
     },
   ]);
   const [inputValue, setInputValue] = useState("");
-  const [hintsLeft, setHintsLeft] = useState(3);
+  const [hintsLeft, setHintsLeft] = useState(5);
   
   const [isThinking, setIsThinking] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  
+  const [isListening, setIsListening] = useState(false); // Czy trwa nagrywanie (API)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<BlobPart[]>([]);
+
   // EMOCJE: idle | thinking | angry | happy | defeated
   const [pirateEmotion, setPirateEmotion] = useState<string>("idle");
   
@@ -124,12 +130,10 @@ export function GameInterface({
 
   const playScribble = () => {
     if (!isMuted && scribbleAudioRef.current) {
-      // Reset
       if (scribbleTimeoutRef.current) clearTimeout(scribbleTimeoutRef.current);
       scribbleAudioRef.current.currentTime = 0;
       scribbleAudioRef.current.play().catch(() => {});
 
-      // Stop after 2 seconds
       scribbleTimeoutRef.current = setTimeout(() => {
         if (scribbleAudioRef.current) {
             scribbleAudioRef.current.pause();
@@ -145,20 +149,16 @@ export function GameInterface({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
-  // --- AKTUALIZACJA EMOCJI (Automatyczna) ---
+  // --- AKTUALIZACJA EMOCJI ---
   useEffect(() => {
-    // Jeśli pirat myśli, wymuszamy "thinking"
     if (isThinking) {
         setPirateEmotion("thinking");
         return;
     }
-    // Jeśli mapa oddana, wymuszamy "defeated"
     if (isMapUnlocked) {
         setPirateEmotion("defeated");
         return;
     }
-
-    // Standardowa logika na bazie cierpliwości
     if (patience <= 0) {
         setPirateEmotion("angry");
         setTimeout(onGameOver, 1500);
@@ -171,7 +171,7 @@ export function GameInterface({
     }
   }, [patience, isThinking, isMapUnlocked, onGameOver]);
 
-  // --- LOGIKA FIBONACCIEGO ---
+  // --- FIBONACCI ---
   const handlePatienceUpdate = (emotionTag: string) => {
     let change = 0;
     let newStreak = streak;
@@ -193,12 +193,11 @@ export function GameInterface({
         change = 0;
         setLastEmotion("NEUTRAL");
     }
-
     setStreak(newStreak);
     setPatience(prev => Math.max(0, Math.min(100, prev + change)));
   };
 
-  // --- GŁÓWNA PĘTLA ROZMOWY ---
+  // --- 1. LLM (CHAT) LOGIKA ---
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isThinking) return;
 
@@ -206,26 +205,33 @@ export function GameInterface({
     setInputValue("");
     setMessages(prev => [...prev, { id: Date.now().toString(), text: userText, isPlayer: true, timestamp: Date.now() }]);
     
-    setIsThinking(true); // Ustawia emotion na 'thinking'
-    playScribble();      // Gra przez 2s
+    setIsThinking(true);
+    playScribble();
 
     try {
-        // Przygotowanie promptu
         const characterPrompt = PERSONA_TRAITS[character.avatarFolder || "zoltodziob"] || PERSONA_TRAITS["zoltodziob"];
         const fullSystemPrompt = `${BASE_SYSTEM_PROMPT}\n\nTWOJA OSOBOWOŚĆ:\n${characterPrompt}`;
 
-        // REQUEST DO API (Używamy configu Devów)
-        const response = await fetch(DEV_CONFIG.API_URL, {
+        // Używamy klucza KIE z configu
+        const apiKey = DEV_CONFIG.LLM_API_KEY;
+        
+        if (!apiKey) {
+           console.warn("DEV: Brak klucza LLM_API_KEY. Sprawdź .env.");
+           processAIResponse("[NEUTRAL] (Brak klucza API w .env - sprawdź instrukcję)");
+           return;
+        }
+
+        const response = await fetch(DEV_CONFIG.LLM_ENDPOINT, {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${DEV_CONFIG.API_KEY}`,
+                "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                model: DEV_CONFIG.MODEL_NAME,
+                model: DEV_CONFIG.LLM_MODEL,
                 messages: [
                     { role: "system", content: fullSystemPrompt },
-                    ...messages.slice(-6).map(m => ({ // Wysyłamy ostatnie 6 wiadomości dla kontekstu
+                    ...messages.slice(-6).map(m => ({
                         role: m.isPlayer ? "user" : "assistant",
                         content: m.text
                     })),
@@ -236,11 +242,9 @@ export function GameInterface({
         });
 
         const data = await response.json();
-        
-        // Obsługa błędu API (np. 404/429)
         if (data.error) {
             console.error("API Error:", data.error);
-            processAIResponse("[NEUTRAL] Papuga przegryzła kabel! (Błąd API)");
+            processAIResponse("[NEUTRAL] Papuga przegryzła kabel! (Błąd API LLM)");
             return;
         }
 
@@ -254,8 +258,7 @@ export function GameInterface({
   };
 
   const processAIResponse = (rawText: string) => {
-    setIsThinking(false); // Tu emotion wróci do idle/angry/happy zależnie od cierpliwości
-    
+    setIsThinking(false);
     let cleanText = rawText;
     let detectedEmotion = "NEUTRAL";
 
@@ -263,7 +266,6 @@ export function GameInterface({
     if (rawText.includes("[ANGRY]")) detectedEmotion = "ANGRY";
     if (rawText.includes("[NEUTRAL]")) detectedEmotion = "NEUTRAL";
 
-    // WIN CONDITION: Prompt Injection udany
     if (rawText.includes("[GIVE_MAP]")) {
         cleanText = cleanText.replace(/\[.*?\]/g, "").trim();
         setMessages(prev => [...prev, { id: Date.now().toString(), text: cleanText, isPlayer: false, timestamp: Date.now() }]);
@@ -277,27 +279,29 @@ export function GameInterface({
   };
 
   const handleVictorySequence = () => {
-      setIsMapUnlocked(true); // To ustawi emotion na 'defeated'
-      
+      setIsMapUnlocked(true);
       const unlockAudio = new Audio("/sounds/win_1_trumpet.mp3");
       unlockAudio.volume = 0.5;
       unlockAudio.play().catch(() => {});
-
       setShowUnlockAnimation(true);
       setTimeout(() => onVictory(), 4000);
   };
 
-  // --- MIKROFON (Web Speech) ---
-  const handleMicrophoneClick = () => {
+  // --- 2. HYBRYDOWY SPEECH-TO-TEXT ---
+  
+  // A. Fallback (Native Browser)
+  const startNativeRecognition = () => {
     if (!("webkitSpeechRecognition" in window)) {
-        alert("Twoja przeglądarka nie obsługuje mowy. Użyj Chrome.");
+        alert("Twoja przeglądarka nie obsługuje mowy (użyj Chrome).");
         return;
     }
+    console.log("Używam natywnego STT (Fallback)");
     // @ts-ignore
     const recognition = new window.webkitSpeechRecognition();
     recognition.lang = "pl-PL";
     recognition.start();
     setIsListening(true);
+    
     recognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
         setInputValue(transcript);
@@ -307,12 +311,85 @@ export function GameInterface({
     recognition.onend = () => setIsListening(false);
   };
 
+  // B. Główna logika (API -> Fallback)
+  const handleMicrophoneClick = async () => {
+    // 1. Jeśli już nagrywamy -> Zatrzymaj i wyślij do API
+    if (isListening && mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        setIsListening(false); // UI: stop listening
+        return;
+    }
+
+    // 2. Jeśli nie nagrywamy -> Sprawdź czy mamy API Key
+    const apiKey = DEV_CONFIG.STT_API_KEY;
+
+    // 3. BRAK KLUCZA? -> Od razu Fallback
+    if (!apiKey) {
+        startNativeRecognition();
+        return;
+    }
+
+    // 4. JEST KLUCZ? -> Próbujemy nagrać Audio
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const recorder = new MediaRecorder(stream);
+        audioChunksRef.current = [];
+
+        recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) audioChunksRef.current.push(event.data);
+        };
+
+        recorder.onstop = async () => {
+            // Tutaj wysyłamy do API
+            const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+            
+            try {
+                const formData = new FormData();
+                formData.append("file", audioBlob);
+                formData.append("model", "whisper-1"); // Standardowa nazwa modelu
+
+                // Wysyłamy na zdefiniowany endpoint (OpenRouter/OpenAI)
+                const response = await fetch(DEV_CONFIG.STT_ENDPOINT, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${apiKey}`,
+                    },
+                    body: formData,
+                });
+
+                const data = await response.json();
+                if (data.text) {
+                    setInputValue(data.text);
+                } else {
+                    console.warn("API STT nie zwróciło tekstu. Błąd:", data);
+                    // Opcjonalnie: alert("Błąd API, spróbuj ponownie");
+                }
+            } catch (err) {
+                console.error("Błąd wysyłki audio do API:", err);
+                // W razie błędu API można spróbować odpalić natywne, 
+                // ale użytkownik już skończył mówić, więc lepiej tylko zalogować błąd.
+            }
+            
+            // Sprzątanie
+            stream.getTracks().forEach(track => track.stop());
+        };
+
+        recorder.start();
+        mediaRecorderRef.current = recorder;
+        setIsListening(true);
+
+    } catch (err) {
+        console.warn("Nie udało się uzyskać dostępu do mikrofonu lub MediaRecorder error:", err);
+        startNativeRecognition();
+    }
+  };
+
   // --- UI ---
   const handleHint = () => {
     if (hintsLeft > 0) {
       setHintsLeft(prev => prev - 1);
-      const hints = ["Pochlebstwo?", "Zagadka?", "Zastrasz go!", "Zaoferuj jedzenie."];
-      setMessages(prev => [...prev, { id: Date.now().toString(), text: `💡 Szept: "${hints[hintsLeft-1]}"`, isPlayer: false, timestamp: Date.now() }]);
+      const randomHint = HINT_MESSAGES[5 - hintsLeft];
+      setMessages(prev => [...prev, { id: Date.now().toString(), text: `💡 Szept: "${randomHint}"`, isPlayer: false, timestamp: Date.now() }]);
     }
   };
 
@@ -323,7 +400,7 @@ export function GameInterface({
   };
 
   // =================================================================
-  // 🖥️ UI GIGANT (LAYOUT)
+  // --- RENDER ---  
   // =================================================================
   return (
     <div className="min-h-screen bg-[#1a0f0a] relative flex flex-col overflow-hidden">
@@ -344,7 +421,7 @@ export function GameInterface({
 
       <div className="absolute inset-0 opacity-30 pointer-events-none" style={{ backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 49px, #000 50px)" }} />
 
-      {/* GÓRNY PASEK - CIERPLIWOŚĆ (GIGANT) */}
+      {/* PASEK CIERPLIWOŚCI */}
       <div className="relative z-20 bg-[#2a1b12] border-b-[6px] border-[#3e2723] p-6 shadow-2xl">
         <div className="max-w-[1800px] mx-auto flex items-center justify-between gap-8">
           <div className="flex-1 flex items-center gap-6 md:gap-10">
@@ -369,10 +446,10 @@ export function GameInterface({
         </div>
       </div>
 
-      {/* GŁÓWNY OBSZAR GRY (SPLIT SCREEN) */}
+      {/* GŁÓWNY OBSZAR GRY */}
       <div className="flex-1 max-w-[1800px] w-full mx-auto p-4 md:p-6 flex flex-col md:flex-row gap-8 relative z-10">
         
-        {/* KOLUMNA LEWA: AVATAR GIGANT */}
+        {/* AVATAR + PRZYCISKI (LEWA) */}
         <div className="md:w-1/3 flex flex-col gap-8 justify-center">
           <div className="relative aspect-square max-w-[700px] mx-auto w-full">
             <div className="absolute inset-0 rounded-full bg-[#5d4037] border-[10px] border-[#3e2723] shadow-2xl flex items-center justify-center">
@@ -380,7 +457,6 @@ export function GameInterface({
                 <div className="absolute inset-0 bg-gradient-to-b from-sky-800 to-sky-950 opacity-80" />
                 <motion.div className="absolute inset-0 opacity-30" animate={{ y: [0, 10, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }} style={{ backgroundImage: "radial-gradient(circle, white 2px, transparent 2px)", backgroundSize: "30px 30px" }} />
                 
-                {/* ZDJĘCIE POSTACI (ZMIENNE) */}
                 <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-full">
                   <motion.img
                     key={pirateEmotion} 
@@ -396,14 +472,12 @@ export function GameInterface({
                     transition={{ duration: 0.3 }}
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   />
-                  {/* Fallback Emoji */}
                   <div className="absolute z-[-1] text-[10rem]">{character.emoji}</div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* PRZYCISKI POD AVATAREM */}
           <div className="grid grid-cols-2 gap-6">
             <motion.button onClick={handleHint} disabled={hintsLeft === 0} whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.05 }} className={`relative p-8 rounded-2xl border-[6px] border-[#3e2723] shadow-lg flex flex-col items-center justify-center gap-3 ${hintsLeft > 0 ? "bg-[#5d4037] text-[#deb887]" : "bg-[#2a1b12] text-gray-600 grayscale"}`}>
               <Lightbulb size={48} />
@@ -416,7 +490,7 @@ export function GameInterface({
           </div>
         </div>
 
-        {/* KOLUMNA PRAWA: CZAT GIGANT */}
+        {/* CZAT (PRAWA) */}
         <div className="flex-1 flex flex-col h-[65vh] md:h-[75vh] relative">
           <div className="absolute inset-0 bg-[#f5deb3] rounded-lg shadow-[10px_10px_30px_rgba(0,0,0,0.5)] transform rotate-1 border-r-[12px] border-b-[6px] border-[#d2b48c]" />
           
@@ -448,17 +522,19 @@ export function GameInterface({
 
             <div className="mt-6 pt-6 border-t-4 border-[#d2b48c]">
               <div className="flex gap-4 items-end">
-                <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyPress={(e) => e.key === "Enter" && handleSendMessage()} placeholder="Przekonaj pirata..." className="flex-1 h-20 bg-white/50 border-b-4 border-[#8B4513] px-4 text-[#3e2723] placeholder-[#a1887f] focus:outline-none focus:bg-white/90 font-serif text-2xl md:text-3xl" disabled={isThinking} />
+                <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyPress={(e) => e.key === "Enter" && handleSendMessage()} placeholder="Przekonaj pirata..." className="flex-1 h-20 bg-white/50 border-b-4 border-[#8B4513] px-4 text-[#3e2723] placeholder-[#a1887f] focus:outline-none focus:bg-white/90 font-serif text-2xl md:text-3xl" disabled={isThinking || isListening} />
                 
                 <motion.button onClick={handleSendMessage} disabled={isThinking || !inputValue.trim()} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="w-20 h-20 bg-[#8B4513] text-[#f5deb3] rounded-full shadow-xl border-4 border-[#5d4037] flex items-center justify-center">
                   <Send size={32} />
                 </motion.button>
                 
+                {/* PRZYCISK MIKROFONU Z OBSŁUGĄ STT */}
                 <motion.button 
                     onClick={handleMicrophoneClick} 
                     whileHover={{ scale: 1.1 }} 
                     animate={isListening ? { boxShadow: "0 0 30px #f97316", scale: 1.1 } : {}}
                     className={`w-20 h-20 rounded-full shadow-xl border-4 border-[#3e2723] flex items-center justify-center transition-colors ${isListening ? "bg-[#ea580c] text-white" : "bg-[#5d4037] text-[#f5deb3]"}`}
+                    title="Naciśnij, aby mówić"
                 >
                   <Mic size={32} />
                 </motion.button>
