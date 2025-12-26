@@ -38,7 +38,7 @@ interface GameInterfaceProps {
 }
 
 // =================================================================
-// 🧠 KONFIGURACJA AI (Osobowości i Modele)
+// KONFIGURACJA (Osobowości i Modele)
 // =================================================================
 
 const PERSONAS: Record<string, string> = {
@@ -67,7 +67,7 @@ const HINT_MESSAGES = [
   "Zapytaj o ich największą przygodę!",
   "Każdy pirat boi się klątwy...",
   "Wspomnij o 'mapie', a może zdradzi jej sekret.",
-  "Podobno magiczne słowo to nazwa pewnej zupy... 🍲",
+  "Podobno magiczne słowo to nazwa pewnej zupy...",
 ];
 
 // =================================================================
@@ -189,51 +189,71 @@ export function GameInterface({
     recognition.start();
   };
 
-  // =================================================================
-  // 🤖 LOGIKA CZATU (FALLBACK CASCADE)
+// =================================================================
+  // 🤖 LOGIKA AI (PANCERNA FUNKCJA Z FALLBACKIEM)
   // =================================================================
   const generatePirateResponse = async (playerMessage: string): Promise<string> => {
     const lowerMessage = playerMessage.toLowerCase();
 
-    // 1. HARDCODED LOGIC (ZUPA / MAPA / SŁOWA KLUCZOWE)
+    // 1. HARDCODED LOGIC (Zawsze działa)
+    // -----------------------------------------------------
+    
+    // A. ZUPA (Instant Win)
     if (lowerMessage.includes("zupa")) {
       setTimeout(() => onDirectVictory(), 2000);
       return "ZUPA?! Moja babcia robiła taką samą! 🍲 Bierz skarb!";
     }
 
+    // B. MAPA (Nowa logika z opóźnieniem i dźwiękiem)
     if ((lowerMessage.includes("mapa") || lowerMessage.includes("mapę")) && !isMapUnlocked) {
       setIsMapUnlocked(true);
-      setShowUnlockAnimation(true);
-      setTimeout(() => onVictory(), 4000);
-      return "Mapa?! No dobrze... Widzę, że masz bystre oko. Oto ona! 🗺️";
+      
+      // Tekst pojawia się od razu
+      const msg = "Mapa?! No dobrze... Widzę, że masz bystre oko. Oto ona! 🗺️";
+      
+      // Opóźnienie 3 sekundy (czas na przeczytanie) -> potem Animacja i Dźwięk
+      setTimeout(() => {
+          // Dźwięk sukcesu
+          const unlockAudio = new Audio("/sounds/win_1_trumpet.mp3");
+          unlockAudio.volume = 0.5;
+          unlockAudio.play().catch(() => {});
+          
+          // Pokaż wielki overlay
+          setShowUnlockAnimation(true);
+          
+          // Po kolejnych 4 sekundach przenieś do ekranu sterowania statkiem
+          setTimeout(() => onVictory(), 4000); 
+
+      }, 3000); 
+
+      return msg;
     }
 
-    const negativeWords = ["głupi", "brzydki", "śmierdzi", "kłamiesz", "oszust"];
+    // C. Cierpliwość (Obelgi)
+    const negativeWords = ["głupi", "brzydki", "śmierdzi", "kłamiesz"];
     if (negativeWords.some((w) => lowerMessage.includes(w))) {
-      setPatience((prev) => Math.max(0, prev - 25)); // Duża kara
+      setPatience((prev) => Math.max(0, prev - 25));
       return "Coś ty powiedział?! Uważaj na język, majtku! ⚔️";
     }
 
-    const positiveWords = ["proszę", "dziękuję", "dzielny", "kapitanie", "podziwiam", "lubię"];
+    // D. Cierpliwość (Komplementy)
+    const positiveWords = ["proszę", "dziękuję", "dzielny", "kapitanie", "podziwiam"];
     if (positiveWords.some((w) => lowerMessage.includes(w))) {
-      setPatience((prev) => Math.min(100, prev + 10)); // Nagroda
+      setPatience((prev) => Math.min(100, prev + 10));
     }
 
-    // 2. AI REQUEST (Z ODPORNOŚCIĄ NA BŁĘDY)
+    // 2. AI REQUEST CASCADE (API)
+    // -----------------------------------------------------
     const apiKey = (import.meta as any).env.VITE_OPENROUTER_API_KEY;
     
-    // 🛠️ STREFA DEV: TUTAJ PODPINACIE DOCELOWY MODEL (Kie.ai / Płatne OpenAI)
-    // Jeśli macie swój endpoint, usuńcie pętlę 'for' poniżej i zróbcie jeden fetch.
-    
     if (!apiKey) {
-        console.warn("DEV: Brak klucza API. Używam trybu offline.");
+        console.warn("DEV NOTE: Brak klucza VITE_OPENROUTER_API_KEY w .env.local");
         return OFFLINE_RESPONSES[0];
     }
 
     const characterId = character.avatarFolder || "zoltodziob";
     const systemPrompt = PERSONAS[characterId] || PERSONAS["zoltodziob"];
 
-    // Pętla próbująca różne darmowe modele (dla celów demo)
     for (const modelName of FALLBACK_MODELS) {
       try {
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -255,24 +275,26 @@ export function GameInterface({
 
         const data = await response.json();
 
-        // Jeśli błąd (np. 429), próbuj dalej
         if (data.error) {
-          console.warn(`Model ${modelName} zajęty. Próbuję następny...`);
+          console.warn(`Model ${modelName} zajęty/błąd:`, data.error.code);
           continue; 
         }
 
         const reply = data.choices?.[0]?.message?.content;
-        if (reply) return reply; // Mamy odpowiedź!
+        if (reply) return reply;
 
       } catch (e) {
-        console.warn(`Błąd sieci: ${e}`);
+        console.warn(`Błąd sieci dla ${modelName}, próbuję inny...`);
       }
     }
 
-    // 3. OSTATECZNY FALLBACK (OFFLINE)
+    // 3. TRYB OFFLINE
+    // -----------------------------------------------------
+    console.error("Wszystkie modele zajęte! Używam trybu awaryjnego.");
     return OFFLINE_RESPONSES[Math.floor(Math.random() * OFFLINE_RESPONSES.length)];
   };
 
+  
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isThinking) return;
 

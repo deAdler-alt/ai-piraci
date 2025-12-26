@@ -202,6 +202,7 @@ export default function App() {
           onBack={() => setCurrentScreen("landing")}
         />
       )}
+      
 
       {currentScreen === "game" && selectedCharacter && (
         <GameInterface
