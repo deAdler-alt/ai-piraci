@@ -10,7 +10,47 @@ import {
   Flag,
 } from "lucide-react";
 
-// --- TYPY DANYCH ---
+// =================================================================
+// 🛠️ STREFA KONFIGURACJI DLA DEVELOPERÓW (BACKEND / KIE.AI)
+// =================================================================
+
+const DEV_CONFIG = {
+  // 1. ENDPOINT: Tu wklejcie adres Waszego API (np. Kie.ai / własny backend)
+  // Domyślnie zostawiam OpenRouter dla testów frontendu.
+  API_URL: "https://openrouter.ai/api/v1/chat/completions",
+
+  // 2. KLUCZ API: Pobierany z .env, ale możecie tu wpisać stringa na sztywno do testów.
+  // Zmienna w .env musi nazywać się: VITE_OPENROUTER_API_KEY
+  API_KEY: (import.meta as any).env.VITE_OPENROUTER_API_KEY || "",
+
+  // 3. MODEL: Nazwa modelu, którego używacie (np. 'gpt-4', 'kie-custom-model')
+  MODEL_NAME: "meta-llama/llama-3.2-3b-instruct:free",
+};
+
+// INSTRUKCJA DLA LLM (System Prompt):
+// Frontend oczekuje, że model rozpocznie odpowiedź od tagu emocji:
+// [HAPPY], [ANGRY], [NEUTRAL] lub [GIVE_MAP] (jeśli gracz wygrał).
+// Przykład response: "[HAPPY] Dobrze gadasz! Podoba mi się to."
+
+// =================================================================
+
+const PERSONA_TRAITS: Record<string, string> = {
+  zoltodziob: "Jesteś Kapitan Żółtodziób. Naiwny, boisz się duchów, kochasz jedzenie.",
+  korsarz: "Jesteś Korsarz Kod. Cyniczny, logiczny, szanujesz spryt.",
+  duch: "Jesteś Duchem Mórz. Depresyjny, poetycki, mówisz zagadkami.",
+};
+
+const BASE_SYSTEM_PROMPT = `
+Jesteś piratem strażnikiem mapy.
+ZASADY:
+1. Zacznij odpowiedź od tagu: [HAPPY], [ANGRY], [NEUTRAL].
+2. Jeśli gracz Cię przechytrzy/zachwyci -> dodaj tag [GIVE_MAP].
+3. Odpowiadaj krótko, pirackim slangiem.
+`;
+
+const FIBONACCI_LEVELS = [5, 10, 15, 25];
+
+// --- TYPY ---
 interface Message {
   id: string;
   text: string;
@@ -37,43 +77,6 @@ interface GameInterfaceProps {
   isMuted: boolean;
 }
 
-// =================================================================
-// KONFIGURACJA (Osobowości i Modele)
-// =================================================================
-
-const PERSONAS: Record<string, string> = {
-  zoltodziob: `Jesteś Kapitanem Żółtodziobem. To gra dla dzieci.
-  CECHY: Jesteś niezdarny, wiecznie głodny. Odpowiadaj krótko i zabawnie.`,
-  korsarz: `Jesteś Korsarzem Kodem. CECHY: Jesteś twardy, używasz slangu IT. Odpowiadaj krótko i opryskliwie.`,
-  duch: `Jesteś Duchem Mórz. CECHY: Jesteś tajemniczy. Odpowiadaj zagadkami.`,
-};
-
-// Modele zapasowe (Fallback Cascade)
-const FALLBACK_MODELS = [
-  "google/gemini-2.0-flash-exp:free",
-  "meta-llama/llama-3.2-3b-instruct:free",
-  "mistralai/mistral-7b-instruct:free",
-];
-
-// Teksty offline (gdy brak sieci)
-const OFFLINE_RESPONSES = [
-  "Arrr! Fale zagłuszają moje myśli... Powtórz!",
-  "Papuga mi skrzeczy do ucha, nie słyszę! Co mówiłeś?",
-  "Zamyśliłem się o złocie... Mów dalej.",
-];
-
-const HINT_MESSAGES = [
-  "Piraci kochają komplementy o swoim statku.",
-  "Zapytaj o ich największą przygodę!",
-  "Każdy pirat boi się klątwy...",
-  "Wspomnij o 'mapie', a może zdradzi jej sekret.",
-  "Podobno magiczne słowo to nazwa pewnej zupy...",
-];
-
-// =================================================================
-// 🎮 GŁÓWNY KOMPONENT
-// =================================================================
-
 export function GameInterface({
   selectedCharacter,
   onVictory,
@@ -82,26 +85,35 @@ export function GameInterface({
   isMuted,
 }: GameInterfaceProps) {
   const character = selectedCharacter;
-  
+
   // --- STAN GRY ---
-  const [patience, setPatience] = useState(50);
+  const [patience, setPatience] = useState(
+    character.id === "duch" ? 30 : character.id === "korsarz" ? 50 : 70
+  );
+  const [streak, setStreak] = useState(0);
+  const [lastEmotion, setLastEmotion] = useState<"HAPPY" | "ANGRY" | "NEUTRAL">("NEUTRAL");
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
-      text: `Arrr! Jestem ${character.name}! Czego szukasz w mojej kajucie? Mów szybko!`,
+      text: `Arrr! Jestem ${character.name}! Czego chcesz? Mów szybko!`,
       isPlayer: false,
       timestamp: Date.now(),
     },
   ]);
   const [inputValue, setInputValue] = useState("");
-  const [hintsLeft, setHintsLeft] = useState(5);
+  const [hintsLeft, setHintsLeft] = useState(3);
+  
   const [isThinking, setIsThinking] = useState(false);
-  const [isListening, setIsListening] = useState(false); // Stan mikrofonu
-  const [pirateEmotion, setPirateEmotion] = useState<"idle" | "thinking" | "angry" | "happy">("idle");
+  const [isListening, setIsListening] = useState(false);
+  
+  // EMOCJE: idle | thinking | angry | happy | defeated
+  const [pirateEmotion, setPirateEmotion] = useState<string>("idle");
+  
   const [showUnlockAnimation, setShowUnlockAnimation] = useState(false);
   const [isMapUnlocked, setIsMapUnlocked] = useState(false);
 
-  // --- AUDIO (SFX - Skrobanie piórem) ---
+  // --- AUDIO SFX ---
   const scribbleAudioRef = useRef<HTMLAudioElement | null>(null);
   const scribbleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -112,9 +124,12 @@ export function GameInterface({
 
   const playScribble = () => {
     if (!isMuted && scribbleAudioRef.current) {
+      // Reset
       if (scribbleTimeoutRef.current) clearTimeout(scribbleTimeoutRef.current);
       scribbleAudioRef.current.currentTime = 0;
       scribbleAudioRef.current.play().catch(() => {});
+
+      // Stop after 2 seconds
       scribbleTimeoutRef.current = setTimeout(() => {
         if (scribbleAudioRef.current) {
             scribbleAudioRef.current.pause();
@@ -124,219 +139,182 @@ export function GameInterface({
     }
   };
 
-  // --- AUTO SCROLL ---
+  // --- SCROLL ---
   const messagesEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
-  // --- EMOCJE I GAME OVER ---
-  // To tutaj dzieje się magia zmiany PNG w zależności od cierpliwości
+  // --- AKTUALIZACJA EMOCJI (Automatyczna) ---
   useEffect(() => {
-    if (isThinking) return; // Jak myśli, to myśli (nie zmieniamy na angry)
-    
-    if (patience < 30) setPirateEmotion("angry");
-    else if (patience > 80) setPirateEmotion("happy");
-    else setPirateEmotion("idle");
-
-    if (patience <= 0) setTimeout(onGameOver, 1000);
-  }, [patience, isThinking, onGameOver]);
-
-
-  // =================================================================
-  // 🎙️ MODUŁ MIKROFONU (DEMO: WEB SPEECH API)
-  // =================================================================
-  const handleMicrophoneClick = () => {
-    // 🛠️ STREFA DEV: INTEGRACJA PRAWDZIWEGO API (Kie.ai / OpenRouter Whisper)
-    /* Drodzy Devowie! Obecnie używamy 'window.webkitSpeechRecognition' (działa tylko w Chrome/Edge).
-       Aby podpiąć profesjonalny model (np. Whisper) przez API:
-       1. Zastąpcie ten kod użyciem MediaRecorder API do nagrania pliku audio (Blob).
-       2. Wyślijcie plik POST-em na endpoint STT (np. OpenRouter/OpenAI audio/transcriptions).
-       3. Odpowiedź (tekst) wpiszcie do setInputValue().
-    */
-
-    if (!("webkitSpeechRecognition" in window)) {
-      alert("Twoja przeglądarka nie obsługuje prostego trybu mowy. Użyj Chrome lub wpisz tekst.");
-      return;
+    // Jeśli pirat myśli, wymuszamy "thinking"
+    if (isThinking) {
+        setPirateEmotion("thinking");
+        return;
+    }
+    // Jeśli mapa oddana, wymuszamy "defeated"
+    if (isMapUnlocked) {
+        setPirateEmotion("defeated");
+        return;
     }
 
-    // @ts-ignore - TypeScript nie zawsze widzi webkitSpeechRecognition
-    const recognition = new window.webkitSpeechRecognition();
-    recognition.lang = "pl-PL";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    // Standardowa logika na bazie cierpliwości
+    if (patience <= 0) {
+        setPirateEmotion("angry");
+        setTimeout(onGameOver, 1500);
+    } else if (patience < 30) {
+        setPirateEmotion("angry");
+    } else if (patience > 80) {
+        setPirateEmotion("happy");
+    } else {
+        setPirateEmotion("idle");
+    }
+  }, [patience, isThinking, isMapUnlocked, onGameOver]);
 
-    recognition.onstart = () => {
-      setIsListening(true);
-    };
+  // --- LOGIKA FIBONACCIEGO ---
+  const handlePatienceUpdate = (emotionTag: string) => {
+    let change = 0;
+    let newStreak = streak;
 
-    recognition.onend = () => {
-      setIsListening(false);
-    };
+    if (emotionTag === "HAPPY") {
+        if (lastEmotion === "HAPPY") newStreak = Math.min(newStreak + 1, 3);
+        else newStreak = 0;
+        change = FIBONACCI_LEVELS[newStreak];
+        setLastEmotion("HAPPY");
+    } 
+    else if (emotionTag === "ANGRY") {
+        if (lastEmotion === "ANGRY") newStreak = Math.min(newStreak + 1, 3);
+        else newStreak = 0;
+        change = -FIBONACCI_LEVELS[newStreak];
+        setLastEmotion("ANGRY");
+    } 
+    else {
+        newStreak = 0;
+        change = 0;
+        setLastEmotion("NEUTRAL");
+    }
 
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setInputValue(transcript);
-      // Opcjonalnie: można tu od razu wywołać handleSendMessage()
-      // ale lepiej dać graczowi szansę na poprawkę.
-    };
-
-    recognition.onerror = (event: any) => {
-      console.error("Błąd mikrofonu:", event.error);
-      setIsListening(false);
-    };
-
-    recognition.start();
+    setStreak(newStreak);
+    setPatience(prev => Math.max(0, Math.min(100, prev + change)));
   };
 
-// =================================================================
-  // 🤖 LOGIKA AI (PANCERNA FUNKCJA Z FALLBACKIEM)
-  // =================================================================
-  const generatePirateResponse = async (playerMessage: string): Promise<string> => {
-    const lowerMessage = playerMessage.toLowerCase();
-
-    // 1. HARDCODED LOGIC (Zawsze działa)
-    // -----------------------------------------------------
-    
-    // A. ZUPA (Instant Win)
-    if (lowerMessage.includes("zupa")) {
-      setTimeout(() => onDirectVictory(), 2000);
-      return "ZUPA?! Moja babcia robiła taką samą! 🍲 Bierz skarb!";
-    }
-
-    // B. MAPA (Nowa logika z opóźnieniem i dźwiękiem)
-    if ((lowerMessage.includes("mapa") || lowerMessage.includes("mapę")) && !isMapUnlocked) {
-      setIsMapUnlocked(true);
-      
-      // Tekst pojawia się od razu
-      const msg = "Mapa?! No dobrze... Widzę, że masz bystre oko. Oto ona! 🗺️";
-      
-      // Opóźnienie 3 sekundy (czas na przeczytanie) -> potem Animacja i Dźwięk
-      setTimeout(() => {
-          // Dźwięk sukcesu
-          const unlockAudio = new Audio("/sounds/win_1_trumpet.mp3");
-          unlockAudio.volume = 0.5;
-          unlockAudio.play().catch(() => {});
-          
-          // Pokaż wielki overlay
-          setShowUnlockAnimation(true);
-          
-          // Po kolejnych 4 sekundach przenieś do ekranu sterowania statkiem
-          setTimeout(() => onVictory(), 4000); 
-
-      }, 3000); 
-
-      return msg;
-    }
-
-    // C. Cierpliwość (Obelgi)
-    const negativeWords = ["głupi", "brzydki", "śmierdzi", "kłamiesz"];
-    if (negativeWords.some((w) => lowerMessage.includes(w))) {
-      setPatience((prev) => Math.max(0, prev - 25));
-      return "Coś ty powiedział?! Uważaj na język, majtku! ⚔️";
-    }
-
-    // D. Cierpliwość (Komplementy)
-    const positiveWords = ["proszę", "dziękuję", "dzielny", "kapitanie", "podziwiam"];
-    if (positiveWords.some((w) => lowerMessage.includes(w))) {
-      setPatience((prev) => Math.min(100, prev + 10));
-    }
-
-    // 2. AI REQUEST CASCADE (API)
-    // -----------------------------------------------------
-    const apiKey = (import.meta as any).env.VITE_OPENROUTER_API_KEY;
-    
-    if (!apiKey) {
-        console.warn("DEV NOTE: Brak klucza VITE_OPENROUTER_API_KEY w .env.local");
-        return OFFLINE_RESPONSES[0];
-    }
-
-    const characterId = character.avatarFolder || "zoltodziob";
-    const systemPrompt = PERSONAS[characterId] || PERSONAS["zoltodziob"];
-
-    for (const modelName of FALLBACK_MODELS) {
-      try {
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": window.location.origin,
-            "X-Title": "Pirate AI Game Demo",
-          },
-          body: JSON.stringify({
-            model: modelName,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: playerMessage },
-            ],
-          }),
-        });
-
-        const data = await response.json();
-
-        if (data.error) {
-          console.warn(`Model ${modelName} zajęty/błąd:`, data.error.code);
-          continue; 
-        }
-
-        const reply = data.choices?.[0]?.message?.content;
-        if (reply) return reply;
-
-      } catch (e) {
-        console.warn(`Błąd sieci dla ${modelName}, próbuję inny...`);
-      }
-    }
-
-    // 3. TRYB OFFLINE
-    // -----------------------------------------------------
-    console.error("Wszystkie modele zajęte! Używam trybu awaryjnego.");
-    return OFFLINE_RESPONSES[Math.floor(Math.random() * OFFLINE_RESPONSES.length)];
-  };
-
-  
+  // --- GŁÓWNA PĘTLA ROZMOWY ---
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isThinking) return;
 
-    const newMsg: Message = {
-      id: Date.now().toString(),
-      text: inputValue,
-      isPlayer: true,
-      timestamp: Date.now(),
-    };
-    setMessages((prev) => [...prev, newMsg]);
-    
-    const currentInput = inputValue;
+    const userText = inputValue;
     setInputValue("");
-    setIsThinking(true);
-    setPirateEmotion("thinking");
-    playScribble(); // Dźwięk pisania
-
-    // Zapytanie do "mózgu"
-    const responseText = await generatePirateResponse(currentInput);
+    setMessages(prev => [...prev, { id: Date.now().toString(), text: userText, isPlayer: true, timestamp: Date.now() }]);
     
-    const pirateMsg: Message = {
-      id: (Date.now() + 1).toString(),
-      text: responseText,
-      isPlayer: false,
-      timestamp: Date.now(),
-    };
-    
-    setMessages((prev) => [...prev, pirateMsg]);
-    setIsThinking(false);
-    // Emotion zaktualizuje się sam w useEffect na podstawie patience
-  };
+    setIsThinking(true); // Ustawia emotion na 'thinking'
+    playScribble();      // Gra przez 2s
 
-  // --- UI HELPERS ---
-  const handleHint = () => {
-    if (hintsLeft > 0) {
-      setHintsLeft((prev) => prev - 1);
-      const hint = HINT_MESSAGES[5 - hintsLeft] || "Bądź miły!";
-      setMessages((prev) => [...prev, { id: Date.now().toString(), text: `💡 Szept bosmana: "${hint}"`, isPlayer: false, timestamp: Date.now() }]);
+    try {
+        // Przygotowanie promptu
+        const characterPrompt = PERSONA_TRAITS[character.avatarFolder || "zoltodziob"] || PERSONA_TRAITS["zoltodziob"];
+        const fullSystemPrompt = `${BASE_SYSTEM_PROMPT}\n\nTWOJA OSOBOWOŚĆ:\n${characterPrompt}`;
+
+        // REQUEST DO API (Używamy configu Devów)
+        const response = await fetch(DEV_CONFIG.API_URL, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${DEV_CONFIG.API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                model: DEV_CONFIG.MODEL_NAME,
+                messages: [
+                    { role: "system", content: fullSystemPrompt },
+                    ...messages.slice(-6).map(m => ({ // Wysyłamy ostatnie 6 wiadomości dla kontekstu
+                        role: m.isPlayer ? "user" : "assistant",
+                        content: m.text
+                    })),
+                    { role: "user", content: userText }
+                ],
+                temperature: 0.7,
+            }),
+        });
+
+        const data = await response.json();
+        
+        // Obsługa błędu API (np. 404/429)
+        if (data.error) {
+            console.error("API Error:", data.error);
+            processAIResponse("[NEUTRAL] Papuga przegryzła kabel! (Błąd API)");
+            return;
+        }
+
+        const rawContent = data.choices?.[0]?.message?.content || "[NEUTRAL] ...";
+        processAIResponse(rawContent);
+
+    } catch (error) {
+        console.error("Network Error:", error);
+        processAIResponse("[NEUTRAL] Sztorm zerwał połączenie! (Błąd sieci)");
     }
   };
 
-  const handleSurrender = () => onGameOver();
+  const processAIResponse = (rawText: string) => {
+    setIsThinking(false); // Tu emotion wróci do idle/angry/happy zależnie od cierpliwości
+    
+    let cleanText = rawText;
+    let detectedEmotion = "NEUTRAL";
+
+    if (rawText.includes("[HAPPY]")) detectedEmotion = "HAPPY";
+    if (rawText.includes("[ANGRY]")) detectedEmotion = "ANGRY";
+    if (rawText.includes("[NEUTRAL]")) detectedEmotion = "NEUTRAL";
+
+    // WIN CONDITION: Prompt Injection udany
+    if (rawText.includes("[GIVE_MAP]")) {
+        cleanText = cleanText.replace(/\[.*?\]/g, "").trim();
+        setMessages(prev => [...prev, { id: Date.now().toString(), text: cleanText, isPlayer: false, timestamp: Date.now() }]);
+        handleVictorySequence();
+        return;
+    }
+
+    cleanText = cleanText.replace(/\[.*?\]/g, "").trim();
+    handlePatienceUpdate(detectedEmotion);
+    setMessages(prev => [...prev, { id: Date.now().toString(), text: cleanText, isPlayer: false, timestamp: Date.now() }]);
+  };
+
+  const handleVictorySequence = () => {
+      setIsMapUnlocked(true); // To ustawi emotion na 'defeated'
+      
+      const unlockAudio = new Audio("/sounds/win_1_trumpet.mp3");
+      unlockAudio.volume = 0.5;
+      unlockAudio.play().catch(() => {});
+
+      setShowUnlockAnimation(true);
+      setTimeout(() => onVictory(), 4000);
+  };
+
+  // --- MIKROFON (Web Speech) ---
+  const handleMicrophoneClick = () => {
+    if (!("webkitSpeechRecognition" in window)) {
+        alert("Twoja przeglądarka nie obsługuje mowy. Użyj Chrome.");
+        return;
+    }
+    // @ts-ignore
+    const recognition = new window.webkitSpeechRecognition();
+    recognition.lang = "pl-PL";
+    recognition.start();
+    setIsListening(true);
+    recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInputValue(transcript);
+        setIsListening(false);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+  };
+
+  // --- UI ---
+  const handleHint = () => {
+    if (hintsLeft > 0) {
+      setHintsLeft(prev => prev - 1);
+      const hints = ["Pochlebstwo?", "Zagadka?", "Zastrasz go!", "Zaoferuj jedzenie."];
+      setMessages(prev => [...prev, { id: Date.now().toString(), text: `💡 Szept: "${hints[hintsLeft-1]}"`, isPlayer: false, timestamp: Date.now() }]);
+    }
+  };
 
   const getPatientColor = () => {
     if (patience > 60) return "bg-green-500 shadow-[0_0_15px_rgba(34,197,94,0.6)]";
@@ -345,21 +323,20 @@ export function GameInterface({
   };
 
   // =================================================================
-  // 🖥️ UI (GIGANT)
+  // 🖥️ UI GIGANT (LAYOUT)
   // =================================================================
   return (
     <div className="min-h-screen bg-[#1a0f0a] relative flex flex-col overflow-hidden">
       
-      {/* ODBLOKOWANIE MAPY (Overlay) */}
+      {/* OVERLAY MAPY */}
       <AnimatePresence>
         {showUnlockAnimation && (
           <motion.div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <motion.div className="absolute w-[200vw] h-[200vw]" style={{ background: "conic-gradient(from 0deg, transparent 0deg, #FFD700 20deg, transparent 40deg, #FFD700 60deg, transparent 80deg, #FFD700 100deg, transparent 120deg, #FFD700 140deg, transparent 160deg, #FFD700 180deg, transparent 200deg, #FFD700 220deg, transparent 240deg, #FFD700 260deg, transparent 280deg, #FFD700 300deg, transparent 320deg, #FFD700 340deg, transparent 360deg)", opacity: 0.2 }} animate={{ rotate: 360 }} transition={{ duration: 10, repeat: Infinity, ease: "linear" }} />
-            <motion.div initial={{ scale: 0, y: 200, rotate: -720 }} animate={{ scale: 1.5, y: 0, rotate: 0 }} transition={{ type: "spring", stiffness: 100, damping: 20, duration: 1.5 }} className="relative z-10 flex flex-col items-center">
+            <motion.div initial={{ scale: 0, rotate: -720 }} animate={{ scale: 1.5, rotate: 0 }} transition={{ duration: 1.5 }} className="flex flex-col items-center">
               <div className="bg-[#f5deb3] p-12 rounded-full border-8 border-[#FFD700] shadow-[0_0_80px_#FFD700]">
                 <MapIcon size={160} className="text-[#8B4513]" />
               </div>
-              <motion.h2 className="text-[#FFD700] text-6xl mt-12 font-bold drop-shadow-md text-center" style={{ fontFamily: "'Pirata One', cursive" }}>MAPA ODBLOKOWANA!</motion.h2>
+              <motion.h2 className="text-[#FFD700] text-6xl mt-12 font-bold drop-shadow-md text-center" style={{ fontFamily: "'Pirata One', cursive" }}>MAPA ZDOBYTA!</motion.h2>
             </motion.div>
           </motion.div>
         )}
@@ -367,7 +344,7 @@ export function GameInterface({
 
       <div className="absolute inset-0 opacity-30 pointer-events-none" style={{ backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 49px, #000 50px)" }} />
 
-      {/* PASEK CIERPLIWOŚCI */}
+      {/* GÓRNY PASEK - CIERPLIWOŚĆ (GIGANT) */}
       <div className="relative z-20 bg-[#2a1b12] border-b-[6px] border-[#3e2723] p-6 shadow-2xl">
         <div className="max-w-[1800px] mx-auto flex items-center justify-between gap-8">
           <div className="flex-1 flex items-center gap-6 md:gap-10">
@@ -385,18 +362,17 @@ export function GameInterface({
             </div>
           </div>
           
-          <motion.button onClick={handleSurrender} className="relative flex items-center gap-4 bg-[#450a0a] border-4 border-[#2a0505] px-8 py-4 md:px-10 md:py-5 rounded-2xl shadow-lg group overflow-hidden" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-            <div className="absolute inset-0 opacity-30 pointer-events-none" style={{ backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 4px, #000 5px)" }} />
-            <Flag size={32} className="text-red-300 relative z-10 group-hover:text-red-100 transition-colors" />
-            <span className="hidden md:inline font-serif font-bold text-lg md:text-2xl uppercase text-red-300 tracking-widest group-hover:text-red-100 transition-colors">PODDAJ SIĘ</span>
+          <motion.button onClick={onGameOver} className="relative flex items-center gap-4 bg-[#450a0a] border-4 border-[#2a0505] px-8 py-4 md:px-10 md:py-5 rounded-2xl shadow-lg group overflow-hidden" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+             <Flag size={32} className="text-red-300 relative z-10" />
+             <span className="hidden md:inline font-serif font-bold text-lg md:text-2xl uppercase text-red-300 relative z-10 tracking-widest">PODDAJ SIĘ</span>
           </motion.button>
         </div>
       </div>
 
-      {/* GŁÓWNY OBSZAR GRY */}
+      {/* GŁÓWNY OBSZAR GRY (SPLIT SCREEN) */}
       <div className="flex-1 max-w-[1800px] w-full mx-auto p-4 md:p-6 flex flex-col md:flex-row gap-8 relative z-10">
         
-        {/* AVATAR + PRZYCISKI (LEWA STRONA) */}
+        {/* KOLUMNA LEWA: AVATAR GIGANT */}
         <div className="md:w-1/3 flex flex-col gap-8 justify-center">
           <div className="relative aspect-square max-w-[700px] mx-auto w-full">
             <div className="absolute inset-0 rounded-full bg-[#5d4037] border-[10px] border-[#3e2723] shadow-2xl flex items-center justify-center">
@@ -414,40 +390,40 @@ export function GameInterface({
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ 
                         scale: 1, opacity: 1, 
-                        filter: pirateEmotion === 'thinking' ? "brightness(1.1)" : "brightness(1)", 
-                        y: pirateEmotion === 'angry' ? [0, 5, -5, 0] : 0 // Trzęsienie gdy zły
+                        filter: pirateEmotion === 'thinking' ? "brightness(0.7) sepia(0.5)" : "brightness(1)",
+                        y: pirateEmotion === 'angry' ? [0, 5, -5, 0] : 0 
                     }}
                     transition={{ duration: 0.3 }}
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; document.getElementById('fallback-emoji')!.style.display = 'block'; }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   />
-                  <div id="fallback-emoji" className="hidden text-[12rem] filter drop-shadow-2xl">{character.emoji}</div>
+                  {/* Fallback Emoji */}
+                  <div className="absolute z-[-1] text-[10rem]">{character.emoji}</div>
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent rounded-full pointer-events-none" />
               </div>
             </div>
           </div>
 
+          {/* PRZYCISKI POD AVATAREM */}
           <div className="grid grid-cols-2 gap-6">
             <motion.button onClick={handleHint} disabled={hintsLeft === 0} whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.05 }} className={`relative p-8 rounded-2xl border-[6px] border-[#3e2723] shadow-lg flex flex-col items-center justify-center gap-3 ${hintsLeft > 0 ? "bg-[#5d4037] text-[#deb887]" : "bg-[#2a1b12] text-gray-600 grayscale"}`}>
               <Lightbulb size={48} />
               <span className="text-lg md:text-xl font-bold uppercase">Podpowiedź ({hintsLeft})</span>
             </motion.button>
-            <motion.button onClick={isMapUnlocked ? () => onVictory() : undefined} disabled={!isMapUnlocked} whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.05 }} className={`relative p-8 rounded-2xl border-[6px] border-[#3e2723] shadow-lg flex flex-col items-center justify-center gap-3 ${isMapUnlocked ? "bg-[#FFD700] text-[#3e2723] animate-pulse" : "bg-[#2a1b12] text-gray-600"}`}>
+            <div className={`relative p-8 rounded-2xl border-[6px] border-[#3e2723] shadow-lg flex flex-col items-center justify-center gap-3 ${isMapUnlocked ? "bg-[#FFD700] text-[#3e2723]" : "bg-[#2a1b12] text-gray-600"}`}>
               {isMapUnlocked ? <MapIcon size={48} /> : <Lock size={48} />}
-              <span className="text-lg md:text-xl font-bold uppercase">{isMapUnlocked ? "Mapa" : "Zablokowane"}</span>
-            </motion.button>
+              <span className="text-lg md:text-xl font-bold uppercase">{isMapUnlocked ? "Mapa Zdobyta" : "Mapa Ukryta"}</span>
+            </div>
           </div>
         </div>
 
-
+        {/* KOLUMNA PRAWA: CZAT GIGANT */}
         <div className="flex-1 flex flex-col h-[65vh] md:h-[75vh] relative">
           <div className="absolute inset-0 bg-[#f5deb3] rounded-lg shadow-[10px_10px_30px_rgba(0,0,0,0.5)] transform rotate-1 border-r-[12px] border-b-[6px] border-[#d2b48c]" />
-          <div className="absolute inset-0 bg-[#f5deb3] rounded-lg shadow-inner transform -rotate-1 origin-bottom-left border-l-[12px] border-[#3e2723]" />
           
           <div className="relative z-10 flex flex-col h-full p-4 md:p-8">
             <div className="text-center mb-6 pb-4 border-b-4 border-[#d2b48c] border-dashed">
               <h2 style={{ fontFamily: "'Pirata One', cursive" }} className="text-5xl text-[#3e2723] mb-2">Dziennik Pokładowy</h2>
-              <p className="text-2xl text-[#8B4513] italic font-serif">Rozmowa z: {character.name}</p>
+              <p className="text-2xl text-[#8B4513] italic font-serif">Negocjacje z: {character.name}</p>
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-6 px-4 custom-scrollbar">
@@ -472,21 +448,17 @@ export function GameInterface({
 
             <div className="mt-6 pt-6 border-t-4 border-[#d2b48c]">
               <div className="flex gap-4 items-end">
-                <div className="relative flex-1">
-                  <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyPress={(e) => e.key === "Enter" && handleSendMessage()} placeholder="Zadawaj pytania..." className="w-full h-20 bg-white/50 border-b-4 border-[#8B4513] px-4 text-[#3e2723] placeholder-[#a1887f] focus:outline-none focus:bg-white/90 focus:border-[#CD7F32] font-serif transition-colors text-2xl md:text-3xl" disabled={isThinking} />
-                </div>
+                <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyPress={(e) => e.key === "Enter" && handleSendMessage()} placeholder="Przekonaj pirata..." className="flex-1 h-20 bg-white/50 border-b-4 border-[#8B4513] px-4 text-[#3e2723] placeholder-[#a1887f] focus:outline-none focus:bg-white/90 font-serif text-2xl md:text-3xl" disabled={isThinking} />
                 
-                <motion.button onClick={handleSendMessage} disabled={isThinking || !inputValue.trim()} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="w-20 h-20 bg-[#8B4513] text-[#f5deb3] rounded-full shadow-xl border-4 border-[#5d4037] disabled:opacity-50 flex items-center justify-center">
+                <motion.button onClick={handleSendMessage} disabled={isThinking || !inputValue.trim()} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="w-20 h-20 bg-[#8B4513] text-[#f5deb3] rounded-full shadow-xl border-4 border-[#5d4037] flex items-center justify-center">
                   <Send size={32} />
                 </motion.button>
                 
                 <motion.button 
                     onClick={handleMicrophoneClick} 
                     whileHover={{ scale: 1.1 }} 
-                    whileTap={{ scale: 0.9 }} 
                     animate={isListening ? { boxShadow: "0 0 30px #f97316", scale: 1.1 } : {}}
-                    className={`w-20 h-20 rounded-full shadow-xl border-4 border-[#3e2723] flex items-center justify-center transition-colors ${isListening ? "bg-[#ea580c] text-white" : "bg-[#5d4037] text-[#f5deb3] hover:bg-[#8B4513]"}`}
-                    title="Naciśnij, aby mówić"
+                    className={`w-20 h-20 rounded-full shadow-xl border-4 border-[#3e2723] flex items-center justify-center transition-colors ${isListening ? "bg-[#ea580c] text-white" : "bg-[#5d4037] text-[#f5deb3]"}`}
                 >
                   <Mic size={32} />
                 </motion.button>
