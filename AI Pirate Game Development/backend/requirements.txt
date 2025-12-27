@@ -1,0 +1,4 @@
+fastapi
+uvicorn
+requests
+edge-tts

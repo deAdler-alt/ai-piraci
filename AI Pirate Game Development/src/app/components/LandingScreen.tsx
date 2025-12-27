@@ -5,7 +5,8 @@ import logoImg from "./logo.png";
 interface LandingScreenProps {
   onStart: () => void;
   onRules: () => void; 
-  onToggleMute: () => void;
+  isMuted: boolean;          
+  onToggleMute: () => void; 
 }
 
 // === TŁO Z MONETAMI (MEMOIZED) ===
@@ -50,6 +51,9 @@ const BackgroundCoins = memo(() => {
 });
 
 export function LandingScreen({ onStart }: LandingScreenProps) {
+  // UWAGA: onRules, isMuted, onToggleMute są w propsach (dla zgodności z App.tsx),
+  // ale celowo ich nie używamy w tym "czystym" layoutcie, zgodnie z życzeniem.
+  
   return (
     <div
       className="min-h-screen relative overflow-hidden flex flex-col items-center justify-center"
@@ -83,7 +87,6 @@ export function LandingScreen({ onStart }: LandingScreenProps) {
             <img 
                 src={logoImg} 
                 alt="Logo" 
-                // Zmieniono rozmiar na dużo większy
                 className="relative w-48 md:w-[400px] h-auto object-contain drop-shadow-[0_0_15px_rgba(255,215,0,0.4)] hover:scale-105 transition-transform duration-300"
             />
         </div>
@@ -108,14 +111,13 @@ export function LandingScreen({ onStart }: LandingScreenProps) {
                 boxShadow: "inset 0 0 60px rgba(139, 69, 19, 0.3)",
               }}
             >
-              {/* Ozdoby pergaminu */}
               <div className="absolute inset-0 opacity-30 pointer-events-none" style={{ background: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E\")" }} />
               
               <h1
                 className="relative z-10 text-center"
                 style={{
                   fontFamily: "'Pirata One', cursive",
-                  fontSize: "clamp(5rem, 13vw, 11rem)", // OGROMNY FONT
+                  fontSize: "clamp(5rem, 13vw, 11rem)", 
                   color: "#1a0f00",
                   textShadow: "4px 4px 0px rgba(255,255,255,0.4), 6px 6px 0px rgba(0,0,0,0.1)",
                   lineHeight: "1.0",
@@ -147,18 +149,16 @@ export function LandingScreen({ onStart }: LandingScreenProps) {
             <div
               className="relative py-12 px-8 overflow-hidden transition-all duration-200"
               style={{
-                background: "linear-gradient(180deg, #ffc107 0%, #ff8f00 50%, #e65100 100%)", // Złoto-pomarańczowy gradient
+                background: "linear-gradient(180deg, #ffc107 0%, #ff8f00 50%, #e65100 100%)",
                 border: "8px solid #3e2723",
                 borderRadius: "20px",
-                boxShadow: "0 20px 0 #2e1a14, 0 30px 40px rgba(0,0,0,0.5)", // Efekt 3D
+                boxShadow: "0 20px 0 #2e1a14, 0 30px 40px rgba(0,0,0,0.5)",
                 transform: "translateY(0)",
               }}
 
             >
-              {/* Poświata "SHINE" animacja */}
               <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-transparent via-white to-transparent opacity-20 -skew-x-12 translate-x-[-150%] animate-[shine_3s_infinite]" />
 
-              {/* Śruby ozdobne */}
               <div className="absolute top-4 left-4 w-6 h-6 rounded-full bg-[#3e2723] shadow-inner" />
               <div className="absolute top-4 right-4 w-6 h-6 rounded-full bg-[#3e2723] shadow-inner" />
               <div className="absolute bottom-4 left-4 w-6 h-6 rounded-full bg-[#3e2723] shadow-inner" />
@@ -169,7 +169,7 @@ export function LandingScreen({ onStart }: LandingScreenProps) {
                     className="relative z-10 block text-center drop-shadow-md"
                     style={{
                     fontFamily: "'Pirata One', cursive",
-                    fontSize: "clamp(3.5rem, 8vw, 6rem)", // OGROMNY TEKST
+                    fontSize: "clamp(3.5rem, 8vw, 6rem)",
                     color: "#3e2723",
                     textShadow: "1px 1px 0px rgba(255,255,255,0.4)",
                     letterSpacing: "4px",
@@ -184,7 +184,6 @@ export function LandingScreen({ onStart }: LandingScreenProps) {
               </div>
             </div>
             
-            {/* Styl przy wciśnięciu (Active) - symulacja wciśnięcia przycisku 3D */}
             <style>{`
                 .group:active > div {
                     transform: translateY(16px);

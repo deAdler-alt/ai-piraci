@@ -1,74 +1,74 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeft } from "lucide-react";
+import { Character } from "../../core/types"; 
 
-interface Character {
-  id: string;
-  name: string;
-  emoji: string;
-  avatarFolder: string;
-  difficulty: string;
+interface SelectableCharacter extends Character {
   color: string;
   borderColor: string;
-  description: string;
   bounty: string;
   stats: {
     patience: number;
     greed: number;
     cunning: number;
   };
-  lore: string[];
 }
 
 interface CharacterSelectionProps {
-  onSelectCharacter: (characterId: string) => void;
+  onSelect: (character: Character) => void; 
   onBack: () => void;
 }
 
-const characters: Character[] = [
+const CHARACTERS_DATA: SelectableCharacter[] = [
   {
-    id: "easy",
+    id: "zoltodziob",
     name: "Kapitan Żółtodziób",
     emoji: "👶",
     avatarFolder: "zoltodziob",
-    difficulty: "Łatwy",
+    role: "Łatwy",
+    difficulty: "EASY",
+    description: "Wierzy we wszystko. Marzy o wielkiej przygodzie.",
+    avatar: "/characters/zoltodziob/idle.png",
+    // Dodatki wizualne:
     color: "from-yellow-400 to-orange-500",
     borderColor: "#FFD700",
-    description: "Wierzy we wszystko. Marzy o wielkiej przygodzie.",
     bounty: "50 dublonów",
     stats: { patience: 90, greed: 30, cunning: 20 },
-    lore: ["..."],
   },
   {
-    id: "medium",
+    id: "korsarz",
     name: "Korsarz Kod",
     emoji: "🏴‍☠️",
     avatarFolder: "korsarz",
-    difficulty: "Średni",
+    role: "Średni",
+    difficulty: "MEDIUM",
+    description: "Podejrzliwy i chciwy. Szuka haczyków w każdej umowie.",
+    avatar: "/characters/korsarz/idle.png",
+    // Dodatki wizualne:
     color: "from-orange-600 to-red-700",
     borderColor: "#DC2626",
-    description: "Podejrzliwy i chciwy. Szuka haczyków w każdej umowie.",
     bounty: "5,000 dublonów",
     stats: { patience: 50, greed: 80, cunning: 60 },
-    lore: ["..."],
   },
   {
-    id: "hard",
+    id: "duch",
     name: "Duch Mórz",
     emoji: "👻",
     avatarFolder: "duch",
-    difficulty: "Trudny",
+    role: "Trudny",
+    difficulty: "HARD",
+    description: "Widmowy logik. Interesują go tylko czyste fakty.",
+    avatar: "/characters/duch/idle.png",
+    // Dodatki wizualne:
     color: "from-emerald-500 to-teal-900",
     borderColor: "#10B981",
-    description: "Widmowy logik. Interesują go tylko czyste fakty.",
     bounty: "Niewycenialny",
     stats: { patience: 20, greed: 0, cunning: 100 },
-    lore: ["..."],
   },
 ];
 
 export function CharacterSelection({
-  onSelectCharacter,
+  onSelect,
   onBack,
 }: CharacterSelectionProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -103,7 +103,7 @@ export function CharacterSelection({
           className="mb-4"
           style={{
             fontFamily: "'Pirata One', cursive",
-            fontSize: "clamp(3rem, 7vw, 5rem)", // GIGANTYCZNY NAGŁÓWEK
+            fontSize: "clamp(3rem, 7vw, 5rem)",
             color: "#f5deb3",
             textShadow: "4px 4px 0px #3e2723",
           }}
@@ -115,7 +115,7 @@ export function CharacterSelection({
       {/* Grid Kart - Wersja GIGANT */}
       <div className="flex-1 max-w-[1800px] mx-auto w-full flex items-center justify-center pb-20">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12 w-full px-4">
-          {characters.map((character) => {
+          {CHARACTERS_DATA.map((character) => {
             const isSelected = selectedId === character.id;
 
             return (
@@ -127,19 +127,19 @@ export function CharacterSelection({
                   ${isSelected ? "bg-[#3e2723] scale-105 z-20" : "bg-[#2a1b12] hover:bg-[#322319] hover:-translate-y-2"}
                 `}
                 style={{
-                  border: isSelected ? `6px solid ${character.borderColor}` : "6px solid #4a3b32", // Grubasne ramki
+                  border: isSelected ? `6px solid ${character.borderColor}` : "6px solid #4a3b32",
                   boxShadow: isSelected ? `0 0 60px ${character.borderColor}60` : "0 20px 40px rgba(0,0,0,0.6)",
                   filter: selectedId && !isSelected ? "grayscale(100%) opacity(0.4) blur(2px)" : "grayscale(0%)",
                 }}
                 layout
               >
-                {/* Avatar - WERSJA GIGANT */}
+                {/* Avatar */}
                 <div 
                   className="w-60 h-60 md:w-80 md:h-80 rounded-full border-[6px] bg-[#1a1a1a] shadow-inner overflow-hidden mb-8 relative"
                   style={{ borderColor: isSelected ? character.borderColor : "#5d4037" }}
                 >
                    <img 
-                      src={`/characters/${character.avatarFolder}/idle.png`}
+                      src={character.avatar || `/characters/${character.avatarFolder}/idle.png`}
                       alt={character.name}
                       className="w-full h-full object-cover"
                       onError={(e) => {
@@ -166,7 +166,7 @@ export function CharacterSelection({
                   {character.difficulty}
                 </span>
 
-                {/* Opis - Większy font */}
+                {/* Opis */}
                 <p className="text-[#d7ccc8] font-serif text-xl italic opacity-80 leading-relaxed min-h-[4rem]">
                   "{character.description}"
                 </p>
@@ -183,7 +183,8 @@ export function CharacterSelection({
                             whileTap={{ scale: 0.95 }}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                onSelectCharacter(character.id);
+                                // Tutaj przekazujemy obiekt character, który jest zgodny z typem Character (plus dodatki)
+                                onSelect(character);
                             }}
                             className={`
                                 w-full py-4 px-8 rounded-2xl font-bold text-white shadow-[0_0_30px_rgba(0,0,0,0.5)]
@@ -191,7 +192,7 @@ export function CharacterSelection({
                             `}
                             style={{
                                 fontFamily: "'Pirata One', cursive",
-                                fontSize: "2rem", // GIGANTYCZNY PRZYCISK
+                                fontSize: "2rem",
                                 letterSpacing: "2px",
                                 textShadow: "2px 2px 4px rgba(0,0,0,0.5)",
                             }}

@@ -1,97 +1,74 @@
 import { useState, useEffect, useRef } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Volume2, VolumeX } from "lucide-react";
+
+// --- CORE & TYPES ---
+import { Character } from "../core/types";
+
+// --- COMPONENTS ---
 import { LandingScreen } from "./components/LandingScreen";
 import { CharacterSelection } from "./components/CharacterSelection";
-import { GameInterface, Character } from "./components/GameInterface";
+import { GameInterface } from "./components/GameInterface";
 import { TreasureMap } from "./components/TreasureMap";
 import { GameOver } from "./components/GameOver";
 import { Victory } from "./components/Victory";
 import { RulesModal } from "./components/RulesModal";
-import { Volume2, VolumeX } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
 
+// --- TYPES ---
 type GameScreen =
   | "landing"
   | "character-selection"
+  | "GameInterface"
   | "game"
   | "map"
   | "game-over"
   | "victory";
 
-const charactersData: Record<string, Character> = {
-  easy: {
-    id: "zoltodziob",
-    name: "Kapitan Żółtodziób",
-    emoji: "👶",
-    avatarFolder: "zoltodziob", // Wskazuje na public/characters/zoltodziob
-    description: "Łatwy przeciwnik",
-    avatar: "👶",
-  },
-  medium: {
-    id: "korsarz",
-    name: "Korsarz Kod",
-    emoji: "🏴‍☠️",
-    avatarFolder: "korsarz", // Wskazuje na public/characters/korsarz
-    description: "Średni przeciwnik",
-    avatar: "🏴‍☠️",
-  },
-  hard: {
-    id: "duch",
-    name: "Duch Mórz",
-    emoji: "👻",
-    avatarFolder: "duch", // Wskazuje na public/characters/duch
-    description: "Trudny przeciwnik",
-    avatar: "👻",
-  },
-};
-
 export default function App() {
+  // --- STATE ---
   const [currentScreen, setCurrentScreen] = useState<GameScreen>("landing");
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
+  
+  // Audio State
   const [isMuted, setIsMuted] = useState(false);
-  const [bgVolume, setBgVolume] = useState(0.3); 
-  const [showRules, setShowRules] = useState(false);
+  const [bgVolume, setBgVolume] = useState(0.1); 
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+  const [showRules, setShowRules] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // --- AUDIO MANAGER ---
-  
-  // 1. Obsługa głośności, Mute i Ducking (Przyciszanie tła)
+  // =================================================================
+  // 🎵 AUDIO MANAGER
+  // =================================================================
+
+  // 1. Obsługa Głośności, Mute i "Ducking" (Przyciszanie tła)
   useEffect(() => {
     if (audioRef.current) {
-      // LOGIKA DUCKINGU:
-      // Sprawdzamy czy to ekran końcowy (Victory/GameOver)
-      const isEndGame = currentScreen === "victory" || currentScreen === "game-over";
+      // Lista ekranów, na których muzyka ma być tłem (cicha)
+      const isQuietScreen = ["GameInterface","map", "victory", "game-over"].includes(currentScreen);
       
-      // Jeśli tak, głośność to 20% ustawionej wartości. Jeśli nie - 100%.
-      const targetVolume = isEndGame ? bgVolume * 0.2 : bgVolume;
+      // Modifier: 100% normalnie, 20% na ekranach końcowych/mapie
+      const volumeModifier = isQuietScreen ? 0.2 : 1.0;
+      const targetVolume = bgVolume * volumeModifier;
       
-      // Aplikujemy głośność do elementu audio
       audioRef.current.volume = Math.max(0, Math.min(1, targetVolume));
 
-      // Obsługa Play/Pause
       if (isMuted) {
         audioRef.current.pause();
-      } else {
-        // Próbujemy grać tylko jeśli muzyka jest zatrzymana
-        if (audioRef.current.paused) {
-            audioRef.current.play().catch(() => {
-                // Ignorujemy błędy autoplay (np. brak interakcji)
-            });
-        }
+      } else if (audioRef.current.paused) {
+        audioRef.current.play().catch(() => { /* Autoplay block ignore */ });
       }
     }
-  }, [isMuted, bgVolume, currentScreen]); // <--- Te zależności są kluczowe, żeby suwak i zmiana ekranu działały!
+  }, [isMuted, bgVolume, currentScreen]);
 
-
-  // 2. Obsługa efektów dźwiękowych (SFX) przy zmianie ekranu
+  // 2. Obsługa SFX przy zmianie ekranu (np. Game Over)
   useEffect(() => {
     if (isMuted) return;
 
     if (currentScreen === "game-over") {
         const loseAudio = new Audio("/sounds/lose.mp3");
         loseAudio.volume = 0.8;
-        loseAudio.play().catch(e => console.log("Audio error", e));
+        loseAudio.play().catch((e) => console.warn("Audio error", e));
     }
   }, [currentScreen, isMuted]);
 
@@ -101,14 +78,16 @@ export default function App() {
     }
   };
 
-  // --- NAWIGACJA ---
+  // =================================================================
+  // 🧭 NAWIGACJA
+  // =================================================================
+
   const handleStart = () => {
     handleStartMusic();
     setCurrentScreen("character-selection");
   };
 
-  const handleSelectCharacter = (key: string) => {
-    const character = charactersData[key];
+  const handleSelectCharacter = (character: Character) => {
     setSelectedCharacter(character);
     setCurrentScreen("game");
   };
@@ -124,11 +103,15 @@ export default function App() {
   
   const handleBackToGame = () => setCurrentScreen("landing");
 
+  // =================================================================
+  // 🖥️ RENDER
+  // =================================================================
   return (
     <div className="min-h-screen bg-[#050302] font-sans text-white relative overflow-hidden">
+      {/* GLOBAL AUDIO PLAYER */}
       <audio ref={audioRef} loop src="/sounds/bg_music.mp3" />
 
-      {/* PIRACKI PANEL AUDIO */}
+      {/* --- PIRACKI PANEL AUDIO (PRAWY DÓŁ) --- */}
       <div 
         className="fixed bottom-6 right-6 z-[100] flex items-center gap-2"
         onMouseEnter={() => setShowVolumeSlider(true)}
@@ -187,6 +170,8 @@ export default function App() {
         </motion.button>
       </div>
 
+      {/* --- EKRANY GRY --- */}
+
       {currentScreen === "landing" && (
         <LandingScreen
           onStart={handleStart}
@@ -198,11 +183,10 @@ export default function App() {
 
       {currentScreen === "character-selection" && (
         <CharacterSelection
-          onSelectCharacter={handleSelectCharacter}
+          onSelect={handleSelectCharacter} // <-- Zmieniono nazwę propa na zgodną z CharacterSelection.tsx
           onBack={() => setCurrentScreen("landing")}
         />
       )}
-      
 
       {currentScreen === "game" && selectedCharacter && (
         <GameInterface
@@ -218,12 +202,17 @@ export default function App() {
         <TreasureMap
           onComplete={handleMapComplete}
           onBack={handleBackToGame}
-          isMuted={isMuted} // Przekazujemy stan wyciszenia
+          isMuted={isMuted}
         />
       )}
 
-      {currentScreen === "game-over" && <GameOver onRestart={handleRestart} />}
-      {currentScreen === "victory" && (<Victory onRestart={handleRestart} isMuted={isMuted} />)}
+      {currentScreen === "game-over" && (
+        <GameOver onRestart={handleRestart} />
+      )}
+      
+      {currentScreen === "victory" && (
+        <Victory onRestart={handleRestart} isMuted={isMuted} />
+      )}
       
       <RulesModal isOpen={showRules} onClose={() => setShowRules(false)} />
     </div>
