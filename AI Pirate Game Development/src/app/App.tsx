@@ -5,6 +5,9 @@ import { Volume2, VolumeX } from "lucide-react";
 // --- CORE & TYPES ---
 import { Character } from "../core/types";
 
+// --- ADMIN PANEL ---
+import { AdminPanel } from "../app/components/AdminPanel";
+
 // --- COMPONENTS ---
 import { LandingScreen } from "./components/LandingScreen";
 import { CharacterSelection } from "./components/CharacterSelection";
@@ -13,6 +16,8 @@ import { TreasureMap } from "./components/TreasureMap";
 import { GameOver } from "./components/GameOver";
 import { Victory } from "./components/Victory";
 import { RulesModal } from "./components/RulesModal";
+
+import { useInactivity } from "./hooks/useInactivity";
 
 // --- TYPES ---
 type GameScreen =
@@ -34,8 +39,19 @@ export default function App() {
   const [bgVolume, setBgVolume] = useState(0.1); 
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [showRules, setShowRules] = useState(false);
-
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  //panel admin
+  const path = window.location.pathname;
+  if (path === "/admin") {
+    return <AdminPanel />;
+  }
+
+useInactivity(90000, () => {
+    if (window.location.pathname !== "/") {
+        window.location.href = "/";
+    }
+  });
 
   // =================================================================
   // 🎵 AUDIO MANAGER
@@ -183,7 +199,7 @@ export default function App() {
 
       {currentScreen === "character-selection" && (
         <CharacterSelection
-          onSelect={handleSelectCharacter} // <-- Zmieniono nazwę propa na zgodną z CharacterSelection.tsx
+          onSelect={handleSelectCharacter} 
           onBack={() => setCurrentScreen("landing")}
         />
       )}

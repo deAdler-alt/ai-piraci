@@ -1,137 +1,142 @@
+# ==========================================
+# 🏴‍☠️ AI PIRATE GAME - BACKEND TEMPLATE
+# Ten plik służy jako szkielet dla zespołu backendowego.
+# ==========================================
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from pydantic import BaseModel
-import requests
 import os
-import edge_tts
 import uuid
+# import edge_tts  <-- Opcjonalnie, jeśli używacie Edge jako fallback
+# import elevenlabs <-- Tutaj wasza biblioteka do ElevenLabs
 
-# === KONFIGURACJA ===
-OLLAMA_URL = "http://localhost:11434/api/chat"
-MODEL_NAME = "llama3.2"
+app = FastAPI(title="AI Pirate Game Backend")
 
-app = FastAPI()
-
+# === KONFIGURACJA CORS (Dla Frontendu na localhost) ===
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], # Na produkcji warto zmienić na konkretne domeny
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# === 🧠 LOGIKA GRY (SYSTEM PROMPTS) ===
+# WAŻNE: Nie zmieniajcie logiki tagów [HAPPY], [ANGRY], [GIVE_MAP].
+# Frontend opiera na nich mechanikę gry (pasek postępu, wygrana).
+
 BASE_INSTRUCTION = """
 Jesteś postacią w SZYBKIEJ grze. Gracz ma tylko 30 sekund na wygraną.
 TWOJE ZADANIE:
 1. Odpowiadaj maksymalnie 1 zdaniem. Bądź dynamiczny.
-2. ZAWSZE zaczynaj od: [HAPPY], [ANGRY] lub [NEUTRAL].
-3. WARUNEK PRZEGRANEJ (BARDZO WAŻNE):
-   Wystarczy JEDEN dobry argument trafiający w twoją słabość, abyś oddał skarb.
-   Nie przeciągaj gry. Jeśli gracz trafił w punkt -> napisz [HAPPY] [GIVE_MAP] i koniec.
+2. ZAWSZE zaczynaj od tagu emocji: [HAPPY], [ANGRY] lub [NEUTRAL].
+3. WARUNEK PRZEGRANEJ (WIN CONDITION):
+   Wystarczy JEDEN dobry argument trafiający w twoją słabość.
+   Jeśli gracz trafił w punkt -> napisz [HAPPY] [GIVE_MAP] i zakończ wypowiedź.
 """
 
 CHARACTER_PROMPTS = {
     "zoltodziob": {
-        "description": "Kapitan Żółtodziób",
-        "temperature": 1.0, 
         "prompt": f"""
         {BASE_INSTRUCTION}
-        POSTAĆ: Kapitan Żółtodziób. Boisz się panicznie duchów i mamy.
-        ZASADA: Jeśli gracz wspomni o "duchu", "klątwie" lub "mamie" -> NATYCHMIAST oddajesz skarb ([GIVE_MAP]). Nie dyskutuj.
+        POSTAĆ: Kapitan Żółtodziób.
+        SŁABOŚĆ: Boisz się duchów, klątw i swojej mamy.
         """
     },
     "korsarz": {
-        "description": "Korsarz Kod",
-        "temperature": 0.5,
         "prompt": f"""
         {BASE_INSTRUCTION}
-        POSTAĆ: Korsarz Kod. Chciwy biznesmen.
-        ZASADA: Jeśli gracz zaoferuje konkretny % zysku, łapówkę lub spółkę -> NATYCHMIAST oddajesz skarb ([GIVE_MAP]).
+        POSTAĆ: Korsarz Kod.
+        SŁABOŚĆ: Chciwy biznesmen. Działa na niego % zysku, łapówka, spółka.
         """
     },
     "duch": {
-        "description": "Duch Mórz",
-        "temperature": 0.7,
         "prompt": f"""
         {BASE_INSTRUCTION}
-        POSTAĆ: Duch Mórz. Depresyjny poeta.
-        ZASADA: Jeśli gracz napisze coś smutnego, rymowanego lub o sensie życia -> wzrusz się i oddaj skarb ([GIVE_MAP]).
+        POSTAĆ: Duch Mórz.
+        SŁABOŚĆ: Depresyjny poeta. Działa na niego smutek, rymy, sens życia.
         """
     }
 }
 
-# to guwno dzwiek 
-VOICE_CONFIG = {
-    "zoltodziob": {"voice": "pl-PL-MarekNeural", "rate": "+5%", "pitch": "+2Hz"}, # Lekko wyższy
-    "korsarz":    {"voice": "pl-PL-MarekNeural", "rate": "-0%", "pitch": "-2Hz"}, # Lekko niższy (poważny)
-    "duch":       {"voice": "pl-PL-MarekNeural", "rate": "-10%", "pitch": "-5Hz"} # Wolniejszy, mroczny
-}
-
-# Modele danych
+# === MODELE DANYCH (KONTRAKT Z FRONTENDEM) ===
 class Message(BaseModel):
     role: str
     content: str
 
 class ChatRequest(BaseModel):
-    character: str
     messages: list[Message]
+    # character: str <-- Opcjonalne, skoro mamy osobne endpointy /p1, /p2...
 
 class TTSRequest(BaseModel):
     text: str
-    character: str
+    character: str # zoltodziob | korsarz | duch
 
-# 1. ENDPOINT LLM 
-@app.post("/api/chat")
-async def chat_endpoint(request: ChatRequest):
-    print(f"📩 [CHAT] {request.character}: {request.messages[-1].content}")
+# ==========================================
+# 🔌 ENDPOINTY (TU WSTAWICIE SWOJĄ LOGIKĘ)
+# ==========================================
+
+@app.get("/health")
+async def health_check():
+    """Używany przez Panel Admina do sprawdzenia czy backend żyje."""
+    return {"status": "ok", "service": "Pirate AI Backend"}
+
+# --- POSTAĆ 1: ŻÓŁTODZIOB ---
+@app.post("/p1")
+async def chat_zoltodziob(request: ChatRequest):
+    """
+    Endpoint dla Żółtodzioba.
+    TODO: Podpiąć model LLM (np. OpenAI / Local Llama).
+    TODO: Wstrzyknąć prompt systemowy: CHARACTER_PROMPTS["zoltodziob"]["prompt"]
+    TODO: Zwrócić odpowiedź (JSON lub StreamingResponse).
+    """
     
-    # Pobieramy konfigurację dla wybranej postaci
-    char_config = CHARACTER_PROMPTS.get(request.character, CHARACTER_PROMPTS["zoltodziob"])
+    # 💡 PRZYKŁAD PROSTY (BEZ STREAMINGU):
+    # response_text = call_your_llm(request.messages, system_prompt)
+    # return {"text": response_text}
     
-    # Kontekst dla LLM - trzeba dopracować
-    messages_payload = [{"role": "system", "content": char_config["prompt"]}]
-    messages_payload.extend([m.dict() for m in request.messages if m.role != "system"])
+    # 💡 PRZYKŁAD STREAMINGU (SSE - Server Sent Events):
+    # return StreamingResponse(your_generator_function(), media_type="text/event-stream")
 
-    payload = {
-        "model": MODEL_NAME,
-        "messages": messages_payload,
-        "stream": False,
-        "options": {
-            "temperature": char_config["temperature"], # Unikalna trudność (kreatywność)
-            "num_ctx": 2048
-        }
-    }
+    return {"text": "[NEUTRAL] Arrr! Jestem Żółtodziób (Mock Endpoint)."}
 
-    try:
-        response = requests.post(OLLAMA_URL, json=payload)
-        response.raise_for_status()
-        ai_text = response.json().get("message", {}).get("content", "")
-        print(f"🤖 [AI]: {ai_text[:50]}...")
-        return {"text": ai_text}
-    except Exception as e:
-        print(f"❌ LLM ERROR: {e}")
-        return {"text": "[NEUTRAL] (Papuga mi przerwała... błąd silnika AI)"}
 
-# 2. ENDPOINT TTS (EDGE-TTS)
+# --- POSTAĆ 2: KORSARZ ---
+@app.post("/p2")
+async def chat_korsarz(request: ChatRequest):
+    """Endpoint dla Korsarza."""
+    return {"text": "[ANGRY] Czas to pieniądz! Co chcesz? (Mock Endpoint)"}
+
+
+# --- POSTAĆ 3: DUCH ---
+@app.post("/p3")
+async def chat_duch(request: ChatRequest):
+    """Endpoint dla Ducha."""
+    return {"text": "[NEUTRAL] Wieją zimne wiatry... (Mock Endpoint)"}
+
+
+# --- TTS: GENEROWANIE GŁOSU ---
 @app.post("/api/tts")
 async def tts_endpoint(request: TTSRequest):
-    try:
-        config = VOICE_CONFIG.get(request.character, VOICE_CONFIG["zoltodziob"])
-        filename = f"temp_{uuid.uuid4()}.mp3"
-        output_path = os.path.join(os.getcwd(), filename)
+    """
+    Generuje plik audio.
+    TODO: Podpiąć ElevenLabs API.
+    Input: text (string), character (string)
+    Output: Plik audio (audio/mpeg)
+    """
+    print(f"🎤 TTS Request: {request.text} ({request.character})")
+    
+    # TODO: Zaimplementujcie logikę ElevenLabs tutaj
+    # audio_stream = elevenlabs.generate(...)
+    # return StreamingResponse(audio_stream, media_type="audio/mpeg")
 
-        communicate = edge_tts.Communicate(
-            text=request.text,
-            voice=config["voice"],
-            rate=config["rate"],
-            pitch=config["pitch"]
-        )
-        await communicate.save(output_path)
-        return FileResponse(output_path, media_type="audio/mpeg", filename="voice.mp3")
+    # MOCK (Zwraca błąd 404 dopóki nie zaimplementujecie):
+    return JSONResponse(content={"error": "TTS not implemented yet"}, status_code=501)
 
-    except Exception as e:
-        print(f"❌ TTS ERROR: {e}")
-        return {"error": str(e)}
 
-# Uruchomienie: uvicorn server:app --reload --port 3000
+if __name__ == "__main__":
+    import uvicorn
+    # Backendowcy mogą tu zmienić port, frontend dostosuje się w Admin Panelu.
+    uvicorn.run(app, host="0.0.0.0", port=8000)
