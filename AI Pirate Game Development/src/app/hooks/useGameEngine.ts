@@ -1,154 +1,134 @@
-import { useState, useRef, useEffect } from "react";
-import { Character, Message } from "../../core/types";
-import { FIBONACCI_LEVELS } from "../../core/constants";
-import { sendMessageToLLM } from "../../services/llm.service";
-import { fetchPirateVoice } from "../../services/tts.service";
+import { useState, useEffect, useRef } from 'react';
+import { Message, Character } from '../../core/types';
+import { gameService } from '../../services/game.service'; 
 
-export const useGameEngine = (character: Character, onVictory: () => void, onGameOver: () => void) => {
-  // Startujemy od razu z 50%
-  const [patience, setPatience] = useState(50);
-  
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      text: `Arrr! Jestem ${character.name}! Czego chcesz? Mam mało czasu!`,
-      isPlayer: false,
-      timestamp: Date.now(),
-      type: "text"
-    },
-  ]);
-  
-  const [streak, setStreak] = useState(0);
-  const [lastEmotion, setLastEmotion] = useState<string>("NEUTRAL");
-  const [isThinking, setIsThinking] = useState(false);
-  const [pirateEmotion, setPirateEmotion] = useState<string>("idle");
-  const [isMapUnlocked, setIsMapUnlocked] = useState(false);
+interface GameState {
+  messages: Message[];
+  isThinking: boolean;
+  convictionLevel: number;
+  isGameOver: boolean;
+  isWon: boolean;
+  gameId: string | null;
+}
 
-  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+export const useGameEngine = (character: Character, onGameEnd?: (won: boolean) => void) => {
+  const [state, setState] = useState<GameState>({
+    messages: [],
+    isThinking: false,
+    convictionLevel: 50,
+    isGameOver: false,
+    isWon: false,
+    gameId: null
+  });
 
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // 1. ROZPOCZĘCIE GRY
   useEffect(() => {
-    ttsAudioRef.current = new Audio();
-  }, []);
+    let mounted = true;
 
-  // --- REAKCJE AVATARA (DYNAMIKA) ---
-  // Aktualizujemy emocje natychmiast po zmianie paska
-  useEffect(() => {
-    if (isThinking) {
-        setPirateEmotion("thinking");
-        return;
-    }
-    if (patience >= 100 || isMapUnlocked) {
-        setPirateEmotion("happy"); // Wygrana = Happy
-        return;
-    }
-    if (patience <= 0) {
-        setPirateEmotion("angry");
-        setTimeout(onGameOver, 1500);
-        return;
-    }
-    
-    // Dynamiczna zmiana w trakcie gry
-    if (lastEmotion === "HAPPY") setPirateEmotion("happy");
-    else if (lastEmotion === "ANGRY") setPirateEmotion("angry");
-    else setPirateEmotion("idle");
+    const initGame = async () => {
+      try {
+        console.log("Rozpoczynam nową grę z:", character.name);
+        // Reset stanu
+        setState(prev => ({ ...prev, messages: [], isGameOver: false, isWon: false, convictionLevel: 50, isThinking: true }));
 
-  }, [patience, isThinking, isMapUnlocked, lastEmotion]);
-
-
-  const updatePatience = (emotionTag: string) => {
-    let change = 0;
-    let newStreak = streak;
-    
-    // Zapamiętujemy ostatnią emocję dla avatara
-    setLastEmotion(emotionTag);
-
-    if (emotionTag === "HAPPY") {
-      if (lastEmotion === "HAPPY") newStreak = Math.min(newStreak + 1, 3);
-      else newStreak = 0;
-      change = FIBONACCI_LEVELS[newStreak];
-    } else if (emotionTag === "ANGRY") {
-      if (lastEmotion === "ANGRY") newStreak = Math.min(newStreak + 1, 3);
-      else newStreak = 0;
-      change = -FIBONACCI_LEVELS[newStreak];
-    } else {
-      newStreak = 0;
-      change = 0;
-    }
-
-    setStreak(newStreak);
-    setPatience((prev) => Math.max(0, Math.min(100, prev + change)));
-  };
-
-  const playVoice = async (text: string) => {
-    // SFX GRAJĄ ZAWSZE (niezależnie od muzyki w tle)
-    try {
-        const audioUrl = await fetchPirateVoice(text, character.id);
-        if (audioUrl && ttsAudioRef.current) {
-            ttsAudioRef.current.src = audioUrl;
-            ttsAudioRef.current.volume = 1.0; // Głos na 100%
-            ttsAudioRef.current.play().catch(() => {});
+        const data = await gameService.startGame("easy", character.name); 
+        
+        if (mounted) {
+          setState(prev => ({ 
+            ...prev, 
+            gameId: data.game_id,
+            isThinking: false 
+          }));
         }
-    } catch (e) { console.error(e); }
-  };
+      } catch (error) {
+        console.error("Błąd startu gry:", error);
+        if (mounted) setState(prev => ({ ...prev, isThinking: false }));
+      }
+    };
 
-  // --- PODPOWIEDŹ JAKO WIADOMOŚĆ ---
-  const addHintMessage = (hintText: string) => {
-     setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: hintText,
-        isPlayer: false,
-        timestamp: Date.now(),
-        type: "system" // Specjalny typ
-     }]);
-  };
+    initGame();
 
+    return () => { mounted = false; };
+  }, [character.id]);
+
+
+  // 2. WYSYŁANIE WIADOMOŚCI
   const sendMessage = async (userText: string) => {
-    if (!userText.trim() || isThinking) return;
+    if (!state.gameId || state.isGameOver) return;
 
-    setMessages((prev) => [...prev, { 
-      id: Date.now().toString(), text: userText, isPlayer: true, timestamp: Date.now(), type: "text" 
-    }]);
-    setIsThinking(true);
+    // A. Dodaj wiadomość gracza (Z POPRAWKĄ TIMESTAMP)
+    const userMsg: Message = { 
+        id: Date.now().toString(), 
+        text: userText, 
+        isPlayer: true,
+        timestamp: Date.now() // <--- DODANO
+    };
 
-    // Dźwięk pisania (Zawsze słyszalny)
-    setTimeout(() => {
-        const scribble = new Audio("/sounds/scribble.mp3");
-        scribble.volume = 0.5;
-        scribble.play().catch(() => {});
-    }, 500); // Mniejsze opóźnienie dla dynamiki
+    setState(prev => ({
+      ...prev,
+      messages: [...prev.messages, userMsg],
+      isThinking: true
+    }));
 
-    const rawResponse = await sendMessageToLLM(character.id, messages, userText);
-    
-    setIsThinking(false);
-    let cleanText = rawResponse;
-    let detectedEmotion = "NEUTRAL";
+    try {
+      const response = await gameService.sendMessage(userText);
 
-    if (rawResponse.includes("[HAPPY]")) detectedEmotion = "HAPPY";
-    if (rawResponse.includes("[ANGRY]")) detectedEmotion = "ANGRY";
-    
-    // SZYBKA WYGRANA
-    if (rawResponse.includes("[GIVE_MAP]")) {
-      cleanText = cleanText.replace(/\[.*?\]/g, "").trim();
-      setMessages((prev) => [...prev, { id: Date.now().toString(), text: cleanText, isPlayer: false, timestamp: Date.now(), type: "text" }]);
-      setIsMapUnlocked(true);
-      playVoice(cleanText);
-      setTimeout(onVictory, 3000); // Szybsze przejście do ekranu wygranej
-      return;
+      // B. Dodaj odpowiedź pirata (Z POPRAWKĄ TIMESTAMP)
+      const pirateMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        text: response.pirate_response,
+        isPlayer: false,
+        timestamp: Date.now() // <--- DODANO
+      };
+
+      setState(prev => {
+        const isWon = response.is_won;
+        const isLost = response.merit_score <= 0;
+
+        if ((isWon || isLost) && onGameEnd) {
+           setTimeout(() => onGameEnd(isWon), 1000);
+        }
+
+        return {
+          ...prev,
+          messages: [...prev.messages, pirateMsg],
+          convictionLevel: response.merit_score,
+          isWon: isWon,
+          isGameOver: isWon || isLost,
+          isThinking: false
+        };
+      });
+
+      if (response.audio_url) {
+        const audio = new Audio(response.audio_url);
+        audio.play().catch(e => console.error("Błąd audio:", e));
+      }
+
+    } catch (error) {
+      console.error("Błąd wysyłania:", error);
+      
+      // C. Dodaj wiadomość błędu (Z POPRAWKĄ TIMESTAMP - TO NAPRAWIA TWÓJ BŁĄD)
+      setState(prev => ({ 
+        ...prev, 
+        isThinking: false,
+        messages: [...prev.messages, { 
+            id: Date.now().toString(), 
+            text: "Papuga zerwała łącze...", 
+            isPlayer: false,
+            timestamp: Date.now() // <--- DODANO (To naprawia czerwone podkreślenie)
+        }]
+      }));
     }
-
-    cleanText = cleanText.replace(/\[.*?\]/g, "").trim();
-    updatePatience(detectedEmotion);
-    setMessages((prev) => [...prev, { id: Date.now().toString(), text: cleanText, isPlayer: false, timestamp: Date.now(), type: "text" }]);
-    playVoice(cleanText);
   };
 
   return {
-    messages,
-    patience,
-    isThinking,
-    pirateEmotion,
-    isMapUnlocked,
-    sendMessage,
-    addHintMessage 
+    messages: state.messages,
+    isThinking: state.isThinking,
+    convictionLevel: state.convictionLevel,
+    isGameOver: state.isGameOver,
+    isWon: state.isWon,
+    sendMessage
   };
 };
