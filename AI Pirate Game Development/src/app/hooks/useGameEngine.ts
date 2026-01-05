@@ -1,3 +1,5 @@
+// src/app/hooks/useGameEngine.ts
+
 import { useState, useEffect, useRef } from 'react';
 import { Message, Character } from '../../core/types';
 import { gameService } from '../../services/game.service'; 
@@ -15,13 +17,11 @@ export const useGameEngine = (character: Character, onGameEnd?: (won: boolean) =
   const [state, setState] = useState<GameState>({
     messages: [],
     isThinking: false,
-    convictionLevel: 50,
+    convictionLevel: 50, // Startujemy od środka (0-100)
     isGameOver: false,
     isWon: false,
     gameId: null
   });
-
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // 1. ROZPOCZĘCIE GRY
   useEffect(() => {
@@ -29,9 +29,17 @@ export const useGameEngine = (character: Character, onGameEnd?: (won: boolean) =
 
     const initGame = async () => {
       try {
-        console.log("Rozpoczynam nową grę z:", character.name);
-        // Reset stanu
-        setState(prev => ({ ...prev, messages: [], isGameOver: false, isWon: false, convictionLevel: 50, isThinking: true }));
+        console.log("🚀 Rozpoczynam nową grę z:", character.name);
+        
+        // Reset stanu przy zmianie postaci
+        setState(prev => ({ 
+            ...prev, 
+            messages: [], 
+            isGameOver: false, 
+            isWon: false, 
+            convictionLevel: 50, // Reset paska
+            isThinking: true 
+        }));
 
         const data = await gameService.startGame("easy", character.name); 
         
@@ -39,6 +47,8 @@ export const useGameEngine = (character: Character, onGameEnd?: (won: boolean) =
           setState(prev => ({ 
             ...prev, 
             gameId: data.game_id,
+            // Jeśli backend zwraca początkowy merit przy starcie, użyj go, inaczej 50
+            convictionLevel: (data as any).merit_score ?? 50, 
             isThinking: false 
           }));
         }
@@ -58,12 +68,12 @@ export const useGameEngine = (character: Character, onGameEnd?: (won: boolean) =
   const sendMessage = async (userText: string) => {
     if (!state.gameId || state.isGameOver) return;
 
-    // A. Dodaj wiadomość gracza (Z POPRAWKĄ TIMESTAMP)
+    // A. Wiadomość Gracza
     const userMsg: Message = { 
         id: Date.now().toString(), 
         text: userText, 
         isPlayer: true,
-        timestamp: Date.now() // <--- DODANO
+        timestamp: Date.now()
     };
 
     setState(prev => ({
@@ -75,49 +85,52 @@ export const useGameEngine = (character: Character, onGameEnd?: (won: boolean) =
     try {
       const response = await gameService.sendMessage(userText);
 
-      // B. Dodaj odpowiedź pirata (Z POPRAWKĄ TIMESTAMP)
+      // B. Wiadomość Pirata
       const pirateMsg: Message = {
         id: (Date.now() + 1).toString(),
         text: response.pirate_response,
         isPlayer: false,
-        timestamp: Date.now() // <--- DODANO
+        timestamp: Date.now()
       };
 
       setState(prev => {
-        const isWon = response.is_won;
-        const isLost = response.merit_score <= 0;
+        const isWon = response.is_won; 
+        // Warunek przegranej: Merit spada do 0 (lub backend zwraca flagę przegranej, jeśli taką dodacie)
+        const isLost = response.merit_score <= 0; 
 
         if ((isWon || isLost) && onGameEnd) {
-           setTimeout(() => onGameEnd(isWon), 1000);
+           setTimeout(() => onGameEnd(isWon), 1500); // Małe opóźnienie dla efektu
         }
 
         return {
           ...prev,
           messages: [...prev.messages, pirateMsg],
-          convictionLevel: response.merit_score,
+          convictionLevel: response.merit_score, // Tu naprawiamy NaN - bierzemy prosto z backendu
           isWon: isWon,
           isGameOver: isWon || isLost,
           isThinking: false
         };
       });
 
-      if (response.audio_url) {
+      // --- 4. WYCISZENIE TTS (Hot Fix) ---
+      // Zakomentowane na czas demo
+      /* if (response.audio_url) {
         const audio = new Audio(response.audio_url);
         audio.play().catch(e => console.error("Błąd audio:", e));
       }
+      */
 
     } catch (error) {
       console.error("Błąd wysyłania:", error);
       
-      // C. Dodaj wiadomość błędu (Z POPRAWKĄ TIMESTAMP - TO NAPRAWIA TWÓJ BŁĄD)
       setState(prev => ({ 
         ...prev, 
         isThinking: false,
         messages: [...prev.messages, { 
             id: Date.now().toString(), 
-            text: "Papuga zerwała łącze...", 
+            text: "☠️ (Papuga zerwała łącze...)", 
             isPlayer: false,
-            timestamp: Date.now() // <--- DODANO (To naprawia czerwone podkreślenie)
+            timestamp: Date.now()
         }]
       }));
     }
@@ -126,7 +139,7 @@ export const useGameEngine = (character: Character, onGameEnd?: (won: boolean) =
   return {
     messages: state.messages,
     isThinking: state.isThinking,
-    convictionLevel: state.convictionLevel,
+    convictionLevel: state.convictionLevel, // Upewnij się, że UI obsługuje liczbę 0-100
     isGameOver: state.isGameOver,
     isWon: state.isWon,
     sendMessage
