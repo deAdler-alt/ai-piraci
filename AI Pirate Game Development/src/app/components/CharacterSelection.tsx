@@ -1,12 +1,18 @@
 import { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "framer-motion"; // Poprawka importu na framer-motion
 import { ArrowLeft } from "lucide-react";
 import { Character } from "../../core/types"; 
 
+// Rozszerzamy podstawowy typ o rzeczy potrzebne TYLKO w menu wyboru (kolory, statystyki)
 interface SelectableCharacter extends Character {
   color: string;
   borderColor: string;
   bounty: string;
+  emoji: string;          // Wymuszone tutaj, bo w types.ts może być opcjonalne
+  avatarFolder: string;   // Wymuszone tutaj
+  role: string;           // Tekstowa trudność (Łatwy/Średni/Trudny)
+  difficulty: "easy" | "medium" | "hard"; // Techniczna trudność dla backendu
+  avatar: string;         // Ścieżka do obrazka
   stats: {
     patience: number;
     greed: number;
@@ -26,7 +32,7 @@ const CHARACTERS_DATA: SelectableCharacter[] = [
     emoji: "👶",
     avatarFolder: "zoltodziob",
     role: "Łatwy",
-    difficulty: "EASY",
+    difficulty: "easy", // Małe litery, zgodne z backendem
     description: "Wierzy we wszystko. Marzy o wielkiej przygodzie.",
     avatar: "/characters/zoltodziob/idle.png",
     // Dodatki wizualne:
@@ -41,7 +47,7 @@ const CHARACTERS_DATA: SelectableCharacter[] = [
     emoji: "🏴‍☠️",
     avatarFolder: "korsarz",
     role: "Średni",
-    difficulty: "MEDIUM",
+    difficulty: "medium",
     description: "Podejrzliwy i chciwy. Szuka haczyków w każdej umowie.",
     avatar: "/characters/korsarz/idle.png",
     // Dodatki wizualne:
@@ -56,7 +62,7 @@ const CHARACTERS_DATA: SelectableCharacter[] = [
     emoji: "👻",
     avatarFolder: "duch",
     role: "Trudny",
-    difficulty: "HARD",
+    difficulty: "hard",
     description: "Widmowy logik. Interesują go tylko czyste fakty.",
     avatar: "/characters/duch/idle.png",
     // Dodatki wizualne:
@@ -158,12 +164,12 @@ export function CharacterSelection({
                   {character.name}
                 </h2>
                 
-                {/* Trudność */}
+                {/* Trudność (Role) */}
                 <span
                   className="px-6 py-2 rounded-full text-xl font-bold border-2 shadow-md bg-[#2a1b12] mb-6"
                   style={{ color: character.borderColor, borderColor: character.borderColor }}
                 >
-                  {character.difficulty}
+                  {character.role}
                 </span>
 
                 {/* Opis */}
@@ -183,7 +189,7 @@ export function CharacterSelection({
                             whileTap={{ scale: 0.95 }}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                // Tutaj przekazujemy obiekt character, który jest zgodny z typem Character (plus dodatki)
+                                // Tutaj TypeScript jest zadowolony, bo SelectableCharacter to też Character
                                 onSelect(character);
                             }}
                             className={`

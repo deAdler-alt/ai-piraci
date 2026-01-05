@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence, Variants } from "framer-motion"; // Dodano typ Variants
 import {
   Send,
   Lightbulb,
@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 import { useGameEngine } from "../hooks/useGameEngine";
-import { Character } from "../../core/types";
+import { Character, Message } from "../../core/types";
 
 interface GameInterfaceProps {
   selectedCharacter: Character;
@@ -19,22 +19,45 @@ interface GameInterfaceProps {
   onGameOver: () => void;
 }
 
+// Rozszerzamy typ wiadomości na potrzeby UI (nadpisujemy type, żeby był zgodny)
+type UIMessage = Omit<Message, 'type'> & { type?: 'system' | 'text' };
+
 export function GameInterface({
   selectedCharacter,
   onVictory,
   onGameOver,
 }: GameInterfaceProps) {
   
-  const engine = useGameEngine(selectedCharacter, onVictory, onGameOver);
+  const engine = useGameEngine(selectedCharacter, onVictory); 
   const [inputValue, setInputValue] = useState("");
   const [hintsLeft, setHintsLeft] = useState(3);
   const [isListening, setIsListening] = useState(false);
+  const [localHints, setLocalHints] = useState<UIMessage[]>([]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // NAPRAWA 1: Zmieniono 'chat' na 'text', aby pasowało do typu Message
+  const allMessages: UIMessage[] = [
+    ...engine.messages.map(m => ({ ...m, type: 'text' as const })),
+    ...localHints
+  ].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [engine.messages, engine.isThinking]);
+  }, [allMessages.length, engine.isThinking]);
+
+  const getPirateState = () => {
+    if (engine.isWon) return "defeated";
+    if (engine.isGameOver) return "angry";
+    if (engine.isThinking) return "thinking";
+    
+    if (engine.convictionLevel >= 80) return "happy";
+    if (engine.convictionLevel <= 30) return "angry";
+    
+    return "idle";
+  };
+
+  const pirateEmotion = getPirateState();
 
   const handleSendClick = () => {
     if (inputValue.trim()) {
@@ -51,10 +74,19 @@ export function GameInterface({
         "Zaoferuj podział zysków!", 
         "Powołaj się na jego matkę!", 
         "Obiecaj mu jedzenie!",
-        "Użyj podstępu!"
+        "Użyj podstępu!",
+        "Zapytaj o drogę!"
       ];
       const randomHint = hints[Math.floor(Math.random() * hints.length)];
-      engine.addHintMessage(`SUGESTIA: ${randomHint}`);
+      
+      const hintMsg: UIMessage = {
+        id: `hint-${Date.now()}`,
+        text: `SUGESTIA: ${randomHint}`,
+        isPlayer: false,
+        timestamp: Date.now(),
+        type: 'system'
+      };
+      setLocalHints(prev => [...prev, hintMsg]);
     }
   };
 
@@ -63,13 +95,19 @@ export function GameInterface({
         alert("Twoja przeglądarka nie obsługuje mowy (Użyj Chrome/Edge).");
         return;
     }
-    // @ts-ignore
-    const recognition = new window.webkitSpeechRecognition();
+    
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SpeechRecognition = (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
     recognition.lang = "pl-PL"; 
     recognition.continuous = false;
+    
     recognition.onstart = () => setIsListening(true);
     recognition.onend = () => setIsListening(false);
     recognition.onerror = () => setIsListening(false);
+    
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
         setInputValue(transcript);
@@ -78,30 +116,56 @@ export function GameInterface({
   };
 
   const getProgressColor = () => {
-    if (engine.patience > 80) return "bg-green-500 shadow-[0_0_20px_#22c55e]";
-    if (engine.patience > 40) return "bg-yellow-500 shadow-[0_0_15px_#eab308]";
+    if (engine.convictionLevel > 80) return "bg-green-500 shadow-[0_0_20px_#22c55e]";
+    if (engine.convictionLevel > 40) return "bg-yellow-500 shadow-[0_0_15px_#eab308]";
     return "bg-red-600 shadow-[0_0_15px_#dc2626]";
   };
 
-  const avatarVariants = {
+  // NAPRAWA 2: Dodano 'as const' przy typie spring i typowanie Variants
+  const avatarVariants: Variants = {
     idle: { y: [0, 5, 0], transition: { repeat: Infinity, duration: 4 } },
     thinking: { scale: [1, 1.02, 1], filter: "brightness(0.8)", transition: { repeat: Infinity, duration: 1 } },
-    happy: { y: [0, -15, 0], scale: 1.1, filter: "brightness(1.2)", transition: { type: "spring", stiffness: 300 } },
+    happy: { 
+        y: [0, -15, 0], 
+        scale: 1.1, 
+        filter: "brightness(1.2)", 
+        transition: { type: "spring" as const, stiffness: 300 } 
+    },
     angry: { x: [-5, 5, -5, 5, 0], filter: "hue-rotate(-20deg) contrast(1.2)", transition: { duration: 0.4 } },
+    defeated: { rotate: [0, 5, -5, 0], filter: "sepia(1)", transition: { duration: 2 } }
   };
+
+  useEffect(() => {
+    if (engine.isGameOver && !engine.isWon) {
+        onGameOver();
+    }
+  }, [engine.isGameOver, engine.isWon, onGameOver]);
 
   return (
     <div className="min-h-screen bg-[#1a0f0a] relative flex flex-col overflow-hidden">
       
       {/* OVERLAY MAPY */}
       <AnimatePresence>
-        {engine.isMapUnlocked && (
-          <motion.div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex flex-col items-center">
+        {/* FIX: Pokazuj mapę TYLKO jeśli jest wygrana ORAZ wynik jest większy od 0. 
+            To eliminuje glitch, gdzie gra startuje z wynikiem 0 i pokazuje mapę. */}
+        {engine.isWon && engine.convictionLevel > 0 && (
+          <motion.div 
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm" 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }} // Dodane ładne wyjście
+          >
+            <motion.div 
+              initial={{ scale: 0 }} 
+              animate={{ scale: 1 }} 
+              className="flex flex-col items-center"
+            >
               <div className="bg-[#FFD700] p-12 rounded-full shadow-[0_0_100px_#FFD700] animate-pulse">
                 <MapIcon size={120} className="text-[#3e2723]" />
               </div>
-              <h2 className="text-[#FFD700] text-6xl mt-8 font-bold text-center" style={{ fontFamily: "'Pirata One', cursive" }}>SKARB JEST TWÓJ!</h2>
+              <h2 className="text-[#FFD700] text-6xl mt-8 font-bold text-center" style={{ fontFamily: "'Pirata One', cursive" }}>
+                SKARB JEST TWÓJ!
+              </h2>
             </motion.div>
           </motion.div>
         )}
@@ -114,16 +178,15 @@ export function GameInterface({
         <div className="max-w-[1800px] mx-auto flex items-center justify-between gap-8">
           <div className="flex-1 flex items-center gap-6 md:gap-10">
             <div className="relative">
-              <Skull className={`w-16 h-16 md:w-24 md:h-24 ${engine.patience < 30 ? "text-red-500 animate-bounce" : "text-[#8B4513]"}`} />
+              <Skull className={`w-16 h-16 md:w-24 md:h-24 ${engine.convictionLevel < 30 ? "text-red-500 animate-bounce" : "text-[#8B4513]"}`} />
             </div>
             <div className="flex-1 max-w-2xl">
               <div className="flex justify-between text-[#deb887] mb-3">
-                {/* ZMIANA FONTU NA TEN Z "PODDAJ SIĘ" */}
                 <span className="font-serif font-bold text-lg md:text-2xl uppercase tracking-widest">POZIOM PRZEKONANIA</span>
-                <span className="font-serif font-bold text-2xl md:text-3xl">{Math.round(engine.patience)}%</span>
+                <span className="font-serif font-bold text-2xl md:text-3xl">{Math.round(engine.convictionLevel)}%</span>
               </div>
               <div className="h-8 md:h-12 bg-[#1a0f0a] rounded-full overflow-hidden border-4 border-[#3e2723]">
-                <motion.div className={`h-full ${getProgressColor()}`} initial={{ width: "50%" }} animate={{ width: `${engine.patience}%` }} transition={{ duration: 0.5 }} />
+                <motion.div className={`h-full ${getProgressColor()}`} initial={{ width: "50%" }} animate={{ width: `${engine.convictionLevel}%` }} transition={{ duration: 0.5 }} />
               </div>
             </div>
           </div>
@@ -155,17 +218,19 @@ export function GameInterface({
                     
                     <motion.div 
                         className="w-full h-full relative flex items-center justify-center"
-                        animate={engine.pirateEmotion as any}
-                        variants={avatarVariants as any}
+                        animate={pirateEmotion}
+                        variants={avatarVariants}
                     >
-                        {/* 🔍 TUTAJ ZMIENIASZ ROZMIAR AVATARA */}
-                        {/* Zmieniono na w-full h-full, żeby wypełnił całą ramkę. 
-                            Jeśli chcesz mniejszy, zmień na w-[90%] h-[90%] */}
                         <img
-                            src={`/characters/${selectedCharacter.avatarFolder || selectedCharacter.id}/${engine.pirateEmotion}.png`}
-                            alt="Pirate"
+                            src={`/characters/${selectedCharacter.id}/${pirateEmotion}.png`}
+                            alt={selectedCharacter.name}
                             className="w-full h-full object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)]"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} 
+                            onError={(e) => { 
+                                const img = e.target as HTMLImageElement;
+                                if (!img.src.includes('idle.png')) {
+                                    img.src = `/characters/${selectedCharacter.id}/idle.png`;
+                                }
+                            }} 
                         />
                     </motion.div>
                 </div>
@@ -175,13 +240,11 @@ export function GameInterface({
           <div className="grid grid-cols-2 gap-6 w-full">
             <motion.button onClick={handleHintClick} disabled={hintsLeft === 0} whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.05 }} className={`relative p-8 rounded-2xl border-[6px] border-[#3e2723] shadow-lg flex flex-col items-center justify-center gap-3 ${hintsLeft > 0 ? "bg-[#5d4037] text-[#deb887]" : "bg-[#2a1b12] text-gray-600 grayscale"}`}>
               <Lightbulb size={48} />
-              {/* ZMIANA FONTU */}
               <span className="font-serif font-bold text-lg md:text-xl uppercase tracking-widest">Podpowiedź ({hintsLeft})</span>
             </motion.button>
-            <div className={`relative p-8 rounded-2xl border-[6px] border-[#3e2723] shadow-lg flex flex-col items-center justify-center gap-3 ${engine.isMapUnlocked ? "bg-[#FFD700] text-[#3e2723]" : "bg-[#2a1b12] text-gray-600"}`}>
-              {engine.isMapUnlocked ? <MapIcon size={48} /> : <Lock size={48} />}
-              {/* ZMIANA FONTU */}
-              <span className="font-serif font-bold text-lg md:text-xl uppercase tracking-widest">{engine.isMapUnlocked ? "Skarb Twój" : "Skarb Ukryty"}</span>
+            <div className={`relative p-8 rounded-2xl border-[6px] border-[#3e2723] shadow-lg flex flex-col items-center justify-center gap-3 ${engine.isWon ? "bg-[#FFD700] text-[#3e2723]" : "bg-[#2a1b12] text-gray-600"}`}>
+              {engine.isWon ? <MapIcon size={48} /> : <Lock size={48} />}
+              <span className="font-serif font-bold text-lg md:text-xl uppercase tracking-widest">{engine.isWon ? "Skarb Twój" : "Skarb Ukryty"}</span>
             </div>
           </div>
         </div>
@@ -198,14 +261,18 @@ export function GameInterface({
 
             <div className="flex-1 overflow-y-auto space-y-6 px-4 custom-scrollbar">
               <AnimatePresence mode="popLayout">
-                {engine.messages.map((msg) => (
-                  <motion.div key={msg.id} initial={{ opacity: 0, scale: 0.9, x: msg.type === 'system' ? 0 : (msg.isPlayer ? 50 : -50) }} animate={{ opacity: 1, scale: 1, x: 0 }} className={`flex ${msg.type === 'system' ? "justify-center" : (msg.isPlayer ? "justify-end" : "justify-start")}`}>
+                {allMessages.map((msg) => (
+                  <motion.div 
+                    key={msg.id} 
+                    initial={{ opacity: 0, scale: 0.9, x: msg.type === 'system' ? 0 : (msg.isPlayer ? 50 : -50) }} 
+                    animate={{ opacity: 1, scale: 1, x: 0 }} 
+                    className={`flex ${msg.type === 'system' ? "justify-center" : (msg.isPlayer ? "justify-end" : "justify-start")}`}
+                  >
                     
                     {msg.type === 'system' ? (
                        <div className="my-2 max-w-[90%] transform -rotate-1">
                           <div className="bg-[#fffbeb] border-[3px] border-[#fbbf24] text-[#92400e] px-8 py-5 rounded-2xl text-xl shadow-lg flex items-start gap-4">
                               <Lightbulb size={32} className="text-[#f59e0b] mt-1 shrink-0" />
-                              {/* ZMIANA FONTU: Usunięto italic, dodano font-serif, żeby pasowało do reszty czatu */}
                               <p className="font-serif leading-relaxed">{msg.text}</p>
                           </div>
                       </div>

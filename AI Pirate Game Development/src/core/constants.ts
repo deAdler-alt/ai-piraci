@@ -1,7 +1,5 @@
-export const FIBONACCI_LEVELS = [20, 30, 50, 100]; 
-
-export const PERSONA_TRAITS: Record<string, string> = {
-  zoltodziob: "Kapitan Żółtodziób: Boi się duchów i swojej mamy.",
-  korsarz: "Korsarz Kod: Chciwy biznesmen. Szanuje tylko zysk.",
-  duch: "Duch Mórz: Depresyjny poeta. Szuka wzruszeń.",
+export const PERSONA_DESCRIPTIONS: Record<string, string> = {
+  zoltodziob: "Boi się duchów i swojej mamy. Łatwo go nastraszyć.",
+  korsarz: "Chciwy biznesmen. Szanuje tylko zysk i konkretne oferty.",
+  duch: "Depresyjny poeta. Szuka wzruszeń, rymów i sensu istnienia.",
 };
