@@ -9,136 +9,119 @@ interface GameState {
   isGameOver: boolean;
   isWon: boolean;
   gameId: string | null;
+  currentEmotion: string;
+  turnCount: number;
 }
 
 export const useGameEngine = (character: Character, onVictory?: () => void) => {
-  // STARTUJEMY Z 50. To jest stan bezpieczny.
+  // START: 50% (Neutral)
   const [state, setState] = useState<GameState>({
     messages: [],
     isThinking: false,
     convictionLevel: 50, 
     isGameOver: false,
     isWon: false,
-    gameId: null
+    gameId: null,
+    currentEmotion: "idle",
+    turnCount: 0
   });
 
-  // 1. INICJALIZACJA GRY
+  // Funkcja czyszcząca (na wszelki wypadek, gdyby LLM coś wypluł)
+  const cleanResponse = (text: string) => {
+    return text.replace(/\[.*?\]/g, "").replace(/\(.*?\)/g, "").trim();
+  };
+
+  // 1. INICJALIZACJA
   useEffect(() => {
     let mounted = true;
-
     const initGame = async () => {
       try {
-        console.log("🚀 Frontend: Inicjalizacja gry...");
-        
-        // Resetujemy widok na start
-        setState(prev => ({
-            ...prev,
-            messages: [],
-            isGameOver: false,
-            isWon: false,
-            convictionLevel: 50, // Sztywny start
-            isThinking: true
+        // Reset
+        setState(prev => ({ 
+            ...prev, messages: [], isGameOver: false, isWon: false, 
+            convictionLevel: 50, isThinking: true, currentEmotion: "idle", turnCount: 0 
         }));
 
-        // Pytamy backend o założenie gry
         const data = await gameService.startGame("easy", character.name); 
         
         if (mounted) {
-          console.log("✅ Backend: Gra założona. ID:", data.game_id, "Score:", (data as any).merit_score);
-          
           setState(prev => ({ 
             ...prev, 
-            gameId: data.game_id,
-            // Jeśli backend zwrócił już jakiś wynik (np. 50), bierzemy go. 
-            // Jeśli zwrócił 0 (błąd), wymuszamy 50, żeby nie przegrać na starcie.
-            convictionLevel: (data as any).merit_score > 0 ? (data as any).merit_score : 50,
+            gameId: data.game_id, 
+            convictionLevel: 50, // Ignorujemy startowe 0 z backendu
             isThinking: false 
           }));
         }
       } catch (error) {
-        console.error("❌ Błąd krytyczny startu:", error);
+        console.error("Start error:", error);
         if (mounted) setState(prev => ({ ...prev, isThinking: false }));
       }
     };
-
     initGame();
-
     return () => { mounted = false; };
   }, [character.id]);
 
-
-  // 2. PĘTLA ROZGRYWKI
+  // 2. ROZMOWA
   const sendMessage = async (userText: string) => {
     if (!state.gameId || state.isGameOver) return;
 
-    // Dodajemy wiadomość gracza
     const userMsg: Message = { 
-        id: Date.now().toString(), 
-        text: userText, 
-        isPlayer: true,
-        timestamp: Date.now(),
-        type: 'text'
+        id: Date.now().toString(), text: userText, isPlayer: true, timestamp: Date.now(), type: 'text' 
     };
 
     setState(prev => ({
-      ...prev,
-      messages: [...prev.messages, userMsg],
-      isThinking: true
+      ...prev, messages: [...prev.messages, userMsg], isThinking: true, currentEmotion: "thinking", turnCount: prev.turnCount + 1
     }));
 
     try {
-      // Wywołujemy backend
       const response = await gameService.sendMessage(userText);
-      console.log("📩 Backend odpowiedział:", response);
+      const cleanText = cleanResponse(response.pirate_response);
 
       const pirateMsg: Message = {
         id: (Date.now() + 1).toString(),
-        text: response.pirate_response,
-        isPlayer: false,
-        timestamp: Date.now(),
-        type: 'text'
+        text: cleanText || "...",
+        isPlayer: false, timestamp: Date.now(), type: 'text' 
       };
 
       setState(prev => {
-        // --- LOGIKA STANU ---
-        // Tu frontend staje się tylko wykonawcą woli backendu
+        const newScore = response.merit_score;
+        const oldScore = prev.convictionLevel;
+        const currentTurn = prev.turnCount;
+
+        // --- LOGIKA EMOCJI OPARTA NA WYNIKU ---
+        let emotion = "idle";
+        if (newScore > oldScore) emotion = "happy";       // Rośnie -> Cieszy się
+        else if (newScore < oldScore) emotion = "angry";  // Spada -> Złości się
+        else emotion = "thinking";                        // Bez zmian -> Myśli/Neutralny
+
+        // --- LOGIKA WYGRANEJ ---
+        // Wymagamy: Flagi backendu + Minimum 2 tur (żeby była rozmowa)
+        const isWon = response.is_won && currentTurn >= 2;
         
-        const backendScore = response.merit_score;
-        const backendWon = response.is_won;
+        // Przegrana: Tylko jak spadnie do 0 (i nie wygraliśmy)
+        const isLost = !isWon && newScore <= 0;
 
-        // SANITY CHECK: Czy wygrana ma sens?
-        // Nie chcemy mapy, jeśli pirat nas nienawidzi (score < 20)
-        const isValidVictory = backendWon && backendScore > 20;
+        if (isWon) emotion = "happy"; // Wygrana = zawsze happy
+        if (isLost) emotion = "angry"; // Przegrana = zawsze angry
 
-        // Przegrana następuje TYLKO gdy wynik spadnie do 0 (i nie wygraliśmy)
-        const isLost = !isValidVictory && backendScore <= 0;
-
-        if (isValidVictory && onVictory) {
-           setTimeout(onVictory, 2000); // Daj chwilę nacieszyć się komunikatem
-        }
+        if (isWon && onVictory) setTimeout(onVictory, 1500);
 
         return {
           ...prev,
           messages: [...prev.messages, pirateMsg],
-          convictionLevel: backendScore, // Ufamy backendowi
-          isWon: isValidVictory,
-          isGameOver: isValidVictory || isLost,
-          isThinking: false
+          convictionLevel: newScore,
+          isWon: isWon,
+          isGameOver: isWon || isLost,
+          isThinking: false,
+          currentEmotion: emotion
         };
       });
 
     } catch (error) {
-      console.error("Błąd komunikacji:", error);
+      console.error(error);
       setState(prev => ({ 
-        ...prev, 
-        isThinking: false,
-        messages: [...prev.messages, { 
-            id: Date.now().toString(), 
-            text: "☠️ (Błąd sieci... Spróbuj jeszcze raz)", 
-            isPlayer: false,
-            timestamp: Date.now(),
-            type: 'system'
-        }]
+        ...prev, isThinking: false, currentEmotion: "angry",
+        messages: [...prev.messages, { id: Date.now().toString(), text: "☠️ (Błąd sieci)", isPlayer: false, timestamp: Date.now(), type: 'system' }] 
       }));
     }
   };
@@ -149,6 +132,7 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
     convictionLevel: state.convictionLevel,
     isGameOver: state.isGameOver,
     isWon: state.isWon,
+    currentEmotion: state.currentEmotion,
     sendMessage
   };
 };
