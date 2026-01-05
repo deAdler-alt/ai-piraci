@@ -14,11 +14,10 @@ interface GameState {
 }
 
 export const useGameEngine = (character: Character, onVictory?: () => void) => {
-  // START: 50% (Neutral)
   const [state, setState] = useState<GameState>({
     messages: [],
     isThinking: false,
-    convictionLevel: 50, 
+    convictionLevel: 50, // STARTUJEMY Z 50%
     isGameOver: false,
     isWon: false,
     gameId: null,
@@ -26,29 +25,46 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
     turnCount: 0
   });
 
-  // Funkcja czyszcząca (na wszelki wypadek, gdyby LLM coś wypluł)
-  const cleanResponse = (text: string) => {
-    return text.replace(/\[.*?\]/g, "").replace(/\(.*?\)/g, "").trim();
+  // --- FUNKCJA CZYSZCZĄCA (SANITIZER) ---
+  const sanitizeResponse = (rawText: string) => {
+    let emotion = "idle";
+    const upperText = rawText.toUpperCase();
+    
+    // Prosta detekcja emocji
+    if (upperText.includes("HAPPY") || upperText.includes("RADOŚĆ")) emotion = "happy";
+    else if (upperText.includes("ANGRY") || upperText.includes("ZŁOŚĆ")) emotion = "angry";
+    else if (upperText.includes("THINKING") || upperText.includes("MYŚLI")) emotion = "thinking";
+    
+    // Brutalne wycinanie tagów [] () * *
+    let cleanText = rawText
+        .replace(/\[.*?\]/g, "") 
+        .replace(/\(.*?\)/g, "")
+        .replace(/\*.*?\*/g, "")
+        .trim();
+
+    if (cleanText.length === 0) cleanText = "...";
+
+    return { emotion, cleanText };
   };
 
-  // 1. INICJALIZACJA
+  // 1. START GRY
   useEffect(() => {
     let mounted = true;
     const initGame = async () => {
       try {
-        // Reset
-        setState(prev => ({ 
-            ...prev, messages: [], isGameOver: false, isWon: false, 
-            convictionLevel: 50, isThinking: true, currentEmotion: "idle", turnCount: 0 
-        }));
+        // TWARDY RESET - ZAWSZE 50% NA START
+        setState({ 
+            messages: [], isGameOver: false, isWon: false, 
+            convictionLevel: 50, isThinking: true, 
+            currentEmotion: "idle", turnCount: 0, gameId: null 
+        });
 
         const data = await gameService.startGame("easy", character.name); 
         
         if (mounted) {
           setState(prev => ({ 
-            ...prev, 
-            gameId: data.game_id, 
-            convictionLevel: 50, // Ignorujemy startowe 0 z backendu
+            ...prev, gameId: data.game_id, 
+            convictionLevel: 50, // IGNORUJEMY to co zwrócił backend na start
             isThinking: false 
           }));
         }
@@ -61,7 +77,7 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
     return () => { mounted = false; };
   }, [character.id]);
 
-  // 2. ROZMOWA
+  // 2. WYSYŁANIE WIADOMOŚCI
   const sendMessage = async (userText: string) => {
     if (!state.gameId || state.isGameOver) return;
 
@@ -70,58 +86,57 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
     };
 
     setState(prev => ({
-      ...prev, messages: [...prev.messages, userMsg], isThinking: true, currentEmotion: "thinking", turnCount: prev.turnCount + 1
+      ...prev, messages: [...prev.messages, userMsg], isThinking: true, currentEmotion: "thinking", 
+      turnCount: prev.turnCount + 1 // Podbijamy licznik tur
     }));
 
     try {
       const response = await gameService.sendMessage(userText);
-      const cleanText = cleanResponse(response.pirate_response);
+      const { emotion, cleanText } = sanitizeResponse(response.pirate_response);
 
       const pirateMsg: Message = {
         id: (Date.now() + 1).toString(),
-        text: cleanText || "...",
+        text: cleanText, 
         isPlayer: false, timestamp: Date.now(), type: 'text' 
       };
 
       setState(prev => {
-        const newScore = response.merit_score;
-        const oldScore = prev.convictionLevel;
+        let score = response.merit_score;
         const currentTurn = prev.turnCount;
 
-        // --- LOGIKA EMOCJI OPARTA NA WYNIKU ---
-        let emotion = "idle";
-        if (newScore > oldScore) emotion = "happy";       // Rośnie -> Cieszy się
-        else if (newScore < oldScore) emotion = "angry";  // Spada -> Złości się
-        else emotion = "thinking";                        // Bez zmian -> Myśli/Neutralny
+        // --- OKRES OCHRONNY (IMMUNITY) ---
+        // Przez pierwsze 2 tury NIE MOŻNA PRZEGRAĆ, nawet jak score spadnie do 0.
+        const isSafePeriod = currentTurn < 2;
 
-        // --- LOGIKA WYGRANEJ ---
-        // Wymagamy: Flagi backendu + Minimum 2 tur (żeby była rozmowa)
-        const isWon = response.is_won && currentTurn >= 2;
+        if (isSafePeriod && score <= 10) {
+            score = 30; // Sztucznie podtrzymujemy życie wizualnie
+        }
+
+        // --- WARUNKI KOŃCOWE ---
+        // 1. Wygrana: Backend = TAK + Wysoki Wynik + Min. 2 tury
+        const validWin = response.is_won && score > 60 && !isSafePeriod;
         
-        // Przegrana: Tylko jak spadnie do 0 (i nie wygraliśmy)
-        const isLost = !isWon && newScore <= 0;
+        // 2. Przegrana: Wynik = 0 + To NIE jest okres ochronny
+        const validLoss = !validWin && score <= 0 && !isSafePeriod;
 
-        if (isWon) emotion = "happy"; // Wygrana = zawsze happy
-        if (isLost) emotion = "angry"; // Przegrana = zawsze angry
-
-        if (isWon && onVictory) setTimeout(onVictory, 1500);
+        if (validWin && onVictory) setTimeout(onVictory, 2000);
 
         return {
           ...prev,
           messages: [...prev.messages, pirateMsg],
-          convictionLevel: newScore,
-          isWon: isWon,
-          isGameOver: isWon || isLost,
+          convictionLevel: score,
+          isWon: validWin,
+          isGameOver: validWin || validLoss, // Tu blokujemy przegraną w safe period
           isThinking: false,
-          currentEmotion: emotion
+          currentEmotion: validWin ? "happy" : (validLoss ? "angry" : emotion)
         };
       });
 
     } catch (error) {
-      console.error(error);
+      console.error("Chat error:", error);
       setState(prev => ({ 
         ...prev, isThinking: false, currentEmotion: "angry",
-        messages: [...prev.messages, { id: Date.now().toString(), text: "☠️ (Błąd sieci)", isPlayer: false, timestamp: Date.now(), type: 'system' }] 
+        messages: [...prev.messages, { id: Date.now().toString(), text: "☠️ (Błąd komunikacji)", isPlayer: false, timestamp: Date.now(), type: 'system' }] 
       }));
     }
   };
