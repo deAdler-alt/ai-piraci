@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { motion } from "framer-motion"; 
+import { Sword } from "lucide-react";
 import logoImg from "./logo.png";
 
 interface LandingScreenProps {
@@ -74,7 +75,7 @@ export function LandingScreen({ onStart }: LandingScreenProps) {
 
       {/* --- LOGO ZESPOŁU (LEWY GÓRNY RÓG) --- */}
       <motion.div
-        className="absolute top-4 left-4 md:top-8 md:left-8 z-50 flex items-start"
+        className="absolute top-6 left-6 md:top-10 md:left-10 z-50 flex items-start"
         initial={{ y: -50, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.5 }}
@@ -89,19 +90,18 @@ export function LandingScreen({ onStart }: LandingScreenProps) {
         </div>
       </motion.div>
 
-      {/* --- GŁÓWNY KONTENER (FLEX NA DESKTOPIE) --- */}
-      <div className="relative z-10 w-full max-w-[1800px] flex flex-col md:flex-row items-center justify-center gap-12 md:gap-20 px-4 mt-16 md:mt-0">
+      {/* --- GŁÓWNY KONTENER (DODANO PADDING TOP ŻEBY NIE NACHODZIŁO NA LOGO) --- */}
+      <div className="relative z-10 w-full max-w-[1800px] flex flex-col md:flex-row items-center justify-between gap-12 md:gap-20 px-4 mt-20 md:mt-0 pt-32 md:pt-0">
         
         {/* === KOLUMNA LEWA: TYTUŁ I PRZYCISK === */}
-        <div className="flex flex-col items-center justify-center w-full md:w-auto">
+        <div className="flex flex-col items-center justify-center w-full md:w-auto flex-1">
             
             {/* TYTUŁ - PERGAMIN (GIGANT) */}
-            {/* ZMIANY: max-w-5xl (szerszy) oraz ml-8 (przesunięcie w prawo) */}
             <motion.div
                 initial={{ scale: 0.8, opacity: 0, rotate: -3 }}
                 animate={{ scale: 1, opacity: 1, rotate: 0 }}
                 transition={{ duration: 0.8, type: "spring", bounce: 0.5 }}
-                className="mb-12 md:mb-16 relative max-w-5xl w-full ml-0 md:ml-50"
+                className="mb-12 md:mb-16 relative max-w-3xl w-full ml-0 md:ml-50"
             >
                 <div className="relative drop-shadow-[0_30px_30px_rgba(0,0,0,0.8)] hover:scale-[1.02] transition-transform duration-500">
                     <div
@@ -132,84 +132,85 @@ export function LandingScreen({ onStart }: LandingScreenProps) {
                 </div>
             </motion.div>
 
-            {/* PRZYCISK GRAJ (GIGANT) */}
-            {/* ZMIANY: max-w-3xl (szerszy) oraz ml-8 (przesunięcie w prawo) */}
+            {/* PRZYCISK GRAJ (ROZSZERZONY I OBNIŻONY PADDING) */}
             <motion.div 
-            className="w-full max-w-xl"  // było: max-w-3xl ml-0 md:ml-12
-            initial={{ y: 50, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.5, type: "spring" }}
+                className="w-full max-w-2xl ml-0 md:ml-50"
+                initial={{ y: 50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.5, type: "spring" }}
              >
-            <motion.button
-                onClick={onStart}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="group relative w-full cursor-pointer outline-none select-none"
-            >
-                {/* Tło przycisku */}
-                <div
-                className="relative py-8 px-10 md:py-12 md:px-20 overflow-hidden transition-all duration-200"
-                style={{
-                    background: "linear-gradient(180deg, #ffc107 0%, #ff8f00 50%, #e65100 100%)",
-                    border: "8px solid #3e2723",
-                    borderRadius: "20px",
-                    boxShadow: "0 20px 0 #2e1a14, 0 30px 40px rgba(0,0,0,0.5)",
-                    transform: "translateY(0)",
-                }}
+                <motion.button
+                    onClick={onStart}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="group relative w-full cursor-pointer outline-none select-none"
                 >
-                <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-transparent via-white to-transparent opacity-20 -skew-x-12 translate-x-[-150%] animate-[shine_3s_infinite]" />
-
-                <div className="absolute top-4 left-4 w-4 h-4 md:w-6 md:h-6 rounded-full bg-[#3e2723] shadow-inner" />
-                <div className="absolute top-4 right-4 w-4 h-4 md:w-6 md:h-6 rounded-full bg-[#3e2723] shadow-inner" />
-                <div className="absolute bottom-4 left-4 w-4 h-4 md:w-6 md:h-6 rounded-full bg-[#3e2723] shadow-inner" />
-                <div className="absolute bottom-4 right-4 w-4 h-4 md:w-6 md:h-6 rounded-full bg-[#3e2723] shadow-inner" />
-                
-                <div className="flex flex-col items-center justify-center gap-2">
-                    <span
-                        className="relative z-10 block text-center drop-shadow-md leading-[1]"
-                        style={{
-                        fontFamily: "'Pirata One', cursive",
-                        fontSize: "clamp(3.5rem, 7vw, 6rem)",
-                        color: "#3e2723",
-                        textShadow: "1px 1px 0px rgba(255,255,255,0.4)",
-                        letterSpacing: "4px",
-                        }}
+                    <div
+                    // ZMIANA: py-6 (zamiast 8/12) dla mniejszej wysokości, px-12 dla szerokości
+                    className="relative py-6 px-12 md:py-6 md:px-16 overflow-hidden transition-all duration-200" 
+                    style={{
+                        background: "linear-gradient(180deg, #ffc107 0%, #ff8f00 50%, #e65100 100%)",
+                        border: "8px solid #3e2723",
+                        borderRadius: "20px",
+                        boxShadow: "0 20px 0 #2e1a14, 0 30px 40px rgba(0,0,0,0.5)",
+                        transform: "translateY(0)",
+                    }}
                     >
-                        ⚔️ GRAJ TERAZ! ⚔️
-                    </span>
-                    <span className="text-[#3e2723] font-bold text-lg md:text-2xl opacity-80 uppercase tracking-widest">
-                        Kliknij, aby rozpocząć przygodę
-                    </span>
-                </div>
-                </div>
-                
-                <style>{`
-                    .group:active > div {
-                        transform: translateY(16px);
-                        box-shadow: 0 4px 0 #2e1a14, 0 10px 20px rgba(0,0,0,0.5);
-                    }
-                    @keyframes shine {
-                        0% { transform: translateX(-150%) skewX(-12deg); }
-                        20% { transform: translateX(150%) skewX(-12deg); }
-                        100% { transform: translateX(150%) skewX(-12deg); }
-                    }
-                `}</style>
-            </motion.button>
+                        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-transparent via-white to-transparent opacity-20 -skew-x-12 translate-x-[-150%] animate-[shine_3s_infinite]" />
+
+                        <div className="absolute top-4 left-4 w-4 h-4 md:w-6 md:h-6 rounded-full bg-[#3e2723] shadow-inner" />
+                        <div className="absolute top-4 right-4 w-4 h-4 md:w-6 md:h-6 rounded-full bg-[#3e2723] shadow-inner" />
+                        <div className="absolute bottom-4 left-4 w-4 h-4 md:w-6 md:h-6 rounded-full bg-[#3e2723] shadow-inner" />
+                        <div className="absolute bottom-4 right-4 w-4 h-4 md:w-6 md:h-6 rounded-full bg-[#3e2723] shadow-inner" />
+                        
+                        <div className="flex flex-col items-center justify-center gap-1">
+                            <span
+                                className="relative z-10 block text-center drop-shadow-md leading-[1] whitespace-nowrap"
+                                style={{
+                                fontFamily: "'Pirata One', cursive",
+                                fontSize: "clamp(2.5rem, 5vw, 5rem)", // Zmniejszona czcionka, żeby weszło w jednej linii
+                                color: "#3e2723",
+                                textShadow: "1px 1px 0px rgba(255,255,255,0.4)",
+                                letterSpacing: "4px",
+                                }}
+                            >
+                                ⚔️ GRAJ TERAZ! ⚔️
+                            </span>
+                            <span className="text-[#3e2723] font-bold text-base md:text-xl opacity-80 uppercase tracking-widest">
+                                Kliknij, aby rozpocząć przygodę
+                            </span>
+                        </div>
+                    </div>
+                    <style>{`
+                        .group:active > div {
+                            transform: translateY(16px);
+                            box-shadow: 0 4px 0 #2e1a14, 0 10px 20px rgba(0,0,0,0.5);
+                        }
+                        @keyframes shine {
+                            0% { transform: translateX(-150%) skewX(-12deg); }
+                            20% { transform: translateX(150%) skewX(-12deg); }
+                            100% { transform: translateX(150%) skewX(-12deg); }
+                        }
+                    `}</style>
+                </motion.button>
             </motion.div>
 
         </div>
 
         {/* === KOLUMNA PRAWA: LIST GOŃCZY (ZWÓJ) === */}
-        {/* ZMIANY: max-w-lg (większy list) */}
         <motion.div 
-            className="flex-1 w-full max-w-lg flex items-center justify-center relative mt-12 md:mt-0"
+            className="flex-1 w-full max-w-lg flex items-center justify-end relative mt-12 md:mt-0 md:ml-auto md:mr-0"
             initial={{ x: 50, rotate: 6, opacity: 0 }}
             animate={{ x: 0, rotate: 2, opacity: 1 }}
             transition={{ delay: 0.6, type: "spring" }}
         >
             <div className="relative group hover:rotate-0 transition-transform duration-500 transform hover:scale-[1.02]">
             
-            {/* USUNIĘTO MIECZ (SZABLĘ) ZGODNIE Z PROŚBĄ */}
+            {/* SZABLA (W ROGU KARTKI) */}
+            {/* ZMIANY: -top-6 -left-6 i rotacja -45 stopni (wbita pod kątem w róg) */}
+            <div className="absolute -top-15 -left-15 z-30 drop-shadow-2xl -rotate-180">
+                 <Sword size={140} className="text-gray-300 fill-gray-800 drop-shadow-lg" />
+            </div>
 
             {/* PAPIER / ZWÓJ */}
             <div 
@@ -217,12 +218,10 @@ export function LandingScreen({ onStart }: LandingScreenProps) {
                 style={{
                     background: "#f4e4bc",
                     backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.1'/%3E%3C/svg%3E\")",
-                    // Nieregularne brzegi
                     clipPath: "polygon(2% 0, 8% 2%, 15% 0, 22% 2%, 30% 0, 38% 3%, 45% 0, 52% 2%, 60% 0, 68% 3%, 75% 0, 82% 2%, 90% 0, 98% 3%, 100% 0, 98% 8%, 100% 15%, 97% 22%, 99% 30%, 98% 38%, 100% 45%, 97% 52%, 99% 60%, 98% 68%, 100% 75%, 98% 82%, 99% 90%, 97% 98%, 90% 100%, 82% 98%, 75% 100%, 68% 97%, 60% 100%, 52% 98%, 45% 100%, 38% 97%, 30% 100%, 22% 98%, 15% 100%, 8% 98%, 0 100%, 2% 92%, 0 85%, 3% 78%, 0 70%, 2% 62%, 0 55%, 3% 48%, 0 40%, 2% 32%, 0 25%, 3% 18%, 0 10%)",
                     boxShadow: "inset 0 0 40px rgba(139, 69, 19, 0.2)"
                 }}
             >
-                {/* Treść Instrukcji */}
                 <div className="text-center space-y-4">
                     <h3 className="text-3xl md:text-5xl text-[#8B4513] mb-4 border-b-2 border-[#8B4513] border-dashed pb-2 inline-block" style={{ fontFamily: "'Pirata One', cursive" }}>
                         LIST GOŃCZY

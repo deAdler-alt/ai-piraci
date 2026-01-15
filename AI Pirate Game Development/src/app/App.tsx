@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX, Clock } from "lucide-react"; // Dodano Clock
 
 // --- CORE & TYPES ---
 import { Character } from "../core/types";
+import { GameStats } from "./hooks/useGameEngine"; // Import typu statystyk
 
 // --- ADMIN PANEL ---
 import { AdminPanel } from "../app/components/AdminPanel";
@@ -33,6 +34,7 @@ export default function App() {
   const [currentScreen, setCurrentScreen] = useState<GameScreen>("landing");
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [gameOutcome, setGameOutcome] = useState<"win" | "loss">("win");
+  const [finalStats, setFinalStats] = useState<GameStats | null>(null); // NOWE: Stan na statystyki
   
   // Audio State
   const [isMuted, setIsMuted] = useState(false);
@@ -47,58 +49,46 @@ export default function App() {
     return <AdminPanel />;
   }
 
-  useInactivity(90000, () => {
-    if (window.location.pathname !== "/") {
+  // --- TIMER BEZCZYNNOŚCI (45s) ---
+  const timeLeft = useInactivity(90000, () => {
+    // Resetuj grę po upływie czasu (jeśli nie jesteśmy na starcie)
+    if (currentScreen !== "landing") {
         window.location.href = "/";
     }
   });
 
-
-
   // =================================================================
   // 🛠️ DEV ROUTER - TYLKO DO TESTÓW LOKALNYCH
-
-// http://localhost:5173/victory -> Od razu widzisz ekran wygranej (skrzynia, monety).
-
-// http://localhost:5173/game-over -> Widzisz ekran przegranej (kłódki).
-
-// http://localhost:5173/educational-outro -> Widzisz napisy końcowe Star Wars.
-
-// http://localhost:5173/ -> Standardowy start (Landing Page).
-
+  // =================================================================
   useEffect(() => {
-    // Pobieramy to co jest po slashu, np. "victory" z "localhost:5173/victory"
     const path = window.location.pathname.replace("/", "");
 
     if (path === "victory") {
-        setGameOutcome("win"); // Ustawiamy wynik na wygraną (dla Outro)
+        // Mockowe statystyki do testów
+        setFinalStats({ technique: 85, style: 15, total: 100, grade: "Kapitan" });
+        setGameOutcome("win");
         setCurrentScreen("victory");
     } 
     else if (path === "game-over") {
-        setGameOutcome("loss"); // Ustawiamy wynik na przegraną
+        setGameOutcome("loss");
         setCurrentScreen("game-over");
     } 
     else if (path === "educational-outro") {
-        setGameOutcome("win"); // Domyślnie pokazujemy wersję WIN
+        setGameOutcome("win");
         setCurrentScreen("educational-outro");
     }
-    // Jeśli chcesz testować grę bez wybierania postaci (Mock Character)
     else if (path === "game") {
         setSelectedCharacter({
             id: "mock-pirate",
             name: "Testowy Pirat",
             description: "To jest pirat testowy.",
             difficulty: "easy",
+            avatar: "/characters/korsarz/idle.png" // Dodano avatar dla bezpieczeństwa
         });
         setCurrentScreen("game");
     }
   }, []);
   
-  // =================================================================
-
-
-
-
   // =================================================================
   // 🎵 AUDIO MANAGER
   // =================================================================
@@ -118,7 +108,7 @@ export default function App() {
     if (currentScreen === "game-over") {
         new Audio("/sounds/lose.mp3").play().catch(console.warn);
     } else if (currentScreen === "victory") {
-        new Audio("/sounds/win.mp3").play().catch(console.warn); // Opcjonalnie, jeśli masz win.mp3
+        new Audio("/sounds/win.mp3").play().catch(console.warn);
     }
   }, [currentScreen, isMuted]);
 
@@ -142,7 +132,9 @@ export default function App() {
     setCurrentScreen("game");
   };
 
-  const handleGameWon = () => {
+  // NOWE: Przyjmuje statystyki z silnika gry
+  const handleGameWon = (stats: GameStats) => {
+      setFinalStats(stats);
       setGameOutcome("win");
       setCurrentScreen("victory");
   };
@@ -159,8 +151,8 @@ export default function App() {
   const handleBackToMenu = () => {
     setCurrentScreen("landing");
     setSelectedCharacter(null);
+    setFinalStats(null);
   };
-
 
   // =================================================================
   // 🖥️ RENDER
@@ -191,6 +183,14 @@ export default function App() {
         </div>
       )}
 
+      {/* --- TIMER BEZCZYNNOŚCI (LEWY DOLNY RÓG) --- */}
+      {currentScreen !== "landing" && (
+          <div className="fixed bottom-4 left-4 z-[9999] font-mono text-xs text-white/50 bg-black/40 px-3 py-1 rounded-full border border-white/10 flex items-center gap-2 backdrop-blur-sm pointer-events-none">
+              <Clock size={12} />
+              <span>Reset za: {timeLeft}s</span>
+          </div>
+      )}
+
       {/* --- EKRANY GRY --- */}
 
       {currentScreen === "landing" && (
@@ -212,7 +212,7 @@ export default function App() {
       {currentScreen === "game" && selectedCharacter && (
         <GameInterface
           selectedCharacter={selectedCharacter}
-          onVictory={handleGameWon}
+          onVictory={handleGameWon} // Przekazuje teraz stats
           onGameOver={handleGameOver}
         />
       )}
@@ -222,7 +222,12 @@ export default function App() {
       )}
       
       {currentScreen === "victory" && (
-        <Victory onRestart={handleProceedToOutro} isMuted={isMuted} />
+        // Przekazujemy statystyki do Victory
+        <Victory 
+            onRestart={handleProceedToOutro} 
+            isMuted={isMuted} 
+            stats={finalStats}
+        />
       )}
 
       {currentScreen === "educational-outro" && (
@@ -236,4 +241,3 @@ export default function App() {
     </div>
   );
 }
-

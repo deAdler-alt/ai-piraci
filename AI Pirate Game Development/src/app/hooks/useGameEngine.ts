@@ -2,11 +2,19 @@ import { useState, useEffect } from 'react';
 import { Message, Character } from '../../core/types';
 import { gameService } from '../../services/game.service'; 
 
+// Nowy interfejs dla statystyk "skoków narciarskich"
+export interface GameStats {
+  technique: number; // 0-100 (wynik merytoryczny)
+  style: number;     // 0-20 (bonus za szybkość)
+  total: number;     // Suma
+  grade: string;     // Słowna ocena (np. "Legenda")
+}
+
 interface GameState {
   messages: Message[];
   isThinking: boolean;
-  convictionLevel: number; // To jest surowy wynik z backendu (-100 do 100)
-  displayPercent: number;  // To jest wynik przeliczony na % dla paska (0 do 100)
+  convictionLevel: number; // Surowy wynik (-100 do 100)
+  displayPercent: number;  // Wynik % (0 do 100)
   isGameOver: boolean;
   isWon: boolean;
   gameId: string | null;
@@ -14,12 +22,13 @@ interface GameState {
   turnCount: number;
 }
 
-export const useGameEngine = (character: Character, onVictory?: () => void) => {
+// Zmiana typu onVictory, aby przyjmował statystyki
+export const useGameEngine = (character: Character, onVictory?: (stats: GameStats) => void) => {
   const [state, setState] = useState<GameState>({
     messages: [],
     isThinking: false,
-    convictionLevel: 0,   // Startujemy od 0 (neutralnie w nowej skali -100..100)
-    displayPercent: 50,   // Wizualnie to środek paska
+    convictionLevel: 0,
+    displayPercent: 50,
     isGameOver: false,
     isWon: false,
     gameId: null,
@@ -27,11 +36,32 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
     turnCount: 0
   });
 
-  // --- POMOCNICZE: Mapowanie skali -100..100 na 0..100% ---
+  // --- LOGIKA RANKINGU (SKOKI NARCIARSKIE) ---
+  const calculateStats = (percent: number, turns: number): GameStats => {
+    // 1. Technika: Po prostu wynik % (0-100)
+    const technique = percent;
+
+    // 2. Styl: Max 20 pkt. Odejmujemy punkty za każdą turę powyżej 3.
+    // Im szybciej wygrasz, tym więcej punktów za styl.
+    let style = 20 - Math.max(0, (turns - 3) * 2); 
+    if (style < 0) style = 0;
+
+    // 3. Suma
+    const total = technique + style;
+
+    // 4. Ocena słowna
+    let grade = "Majtek";
+    if (total >= 115) grade = "Legenda Siedmiu Mórz";
+    else if (total >= 100) grade = "Postrach Oceanów";
+    else if (total >= 85) grade = "Kapitan";
+    else if (total >= 70) grade = "Korsarz";
+    else if (total >= 50) grade = "Bosman";
+
+    return { technique, style, total, grade };
+  };
+
   const mapScoreToPercent = (backendScore: number) => {
-    // Zabezpieczenie zakresu
     const clamped = Math.max(-100, Math.min(100, backendScore));
-    // Przeliczenie: -100 -> 0, 0 -> 50, 100 -> 100
     return Math.round((clamped + 100) / 2);
   };
 
@@ -54,7 +84,6 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
     return { emotion, cleanText };
   };
 
-  // 1. START GRY
   useEffect(() => {
     let mounted = true;
     const initGame = async () => {
@@ -70,9 +99,7 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
         if (mounted) {
           setState(prev => ({ 
             ...prev, gameId: data.game_id, 
-            convictionLevel: 0, 
-            displayPercent: 50,
-            isThinking: false 
+            convictionLevel: 0, displayPercent: 50, isThinking: false 
           }));
         }
       } catch (error) {
@@ -84,7 +111,6 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
     return () => { mounted = false; };
   }, [character.id]);
 
-  // 2. WYSYŁANIE WIADOMOŚCI
   const sendMessage = async (userText: string) => {
     if (!state.gameId || state.isGameOver) return;
 
@@ -107,44 +133,38 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
         isPlayer: false, timestamp: Date.now(), type: 'text' 
       };
 
-      // --- AUDIO SYNC: Opóźniamy aktualizację stanu o 1s (lub więcej), 
-      // żeby tekst nie pojawił się przed dźwiękiem ---
-      // W idealnym świecie backend zwróciłby "audio duration" lub streamował,
-      // ale przy prostym setupie opóźnienie "na sztywno" to dobry hack.
-      
-      const AUDIO_DELAY_MS = 1200; // 1.2 sekundy opóźnienia tekstu
+      const AUDIO_DELAY_MS = 1200;
 
       setTimeout(() => {
         setState(prev => {
-            const rawScore = response.merit_score; // Skala -100 do 100
+            const rawScore = response.merit_score; 
             const percentScore = mapScoreToPercent(rawScore);
             const currentTurn = prev.turnCount;
 
-            // Okres ochronny (2 tury)
             const isSafePeriod = currentTurn < 2;
-
-            // Warunki wygranej
-            // Zakładamy, że wygrana w nowej skali to np. > 60 (czyli 80% na pasku)
             const validWin = response.is_won && rawScore > 40 && !isSafePeriod;
-            const validLoss = !validWin && rawScore <= -90 && !isSafePeriod; // Przegrana przy -90
+            const validLoss = !validWin && rawScore <= -90 && !isSafePeriod;
 
-            if (validWin && onVictory) setTimeout(onVictory, 2500); // Dłuższy czas na przeczytanie
+            // Obliczamy statystyki
+            const stats = calculateStats(percentScore, currentTurn);
 
-            // Odtwórz audio (jeśli backend zwraca URL)
+            // Przekazujemy statystyki do onVictory
+            if (validWin && onVictory) setTimeout(() => onVictory(stats), 2500);
+
             if (response.audio_url) {
                 const audio = new Audio(response.audio_url);
                 audio.play().catch(e => console.warn("Autoplay audio blocked", e));
             }
 
             return {
-            ...prev,
-            messages: [...prev.messages, pirateMsg],
-            convictionLevel: rawScore,
-            displayPercent: percentScore, // Używamy przeliczonego %
-            isWon: validWin,
-            isGameOver: validWin || validLoss,
-            isThinking: false,
-            currentEmotion: validWin ? "happy" : (validLoss ? "angry" : emotion)
+                ...prev,
+                messages: [...prev.messages, pirateMsg],
+                convictionLevel: rawScore,
+                displayPercent: percentScore,
+                isWon: validWin,
+                isGameOver: validWin || validLoss,
+                isThinking: false,
+                currentEmotion: validWin ? "happy" : (validLoss ? "angry" : emotion)
             };
         });
       }, AUDIO_DELAY_MS);
@@ -158,15 +178,18 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
     }
   };
 
+  // Obliczamy statystyki na bieżąco
+  const gameStats = calculateStats(state.displayPercent, state.turnCount);
+
   return {
     messages: state.messages,
     isThinking: state.isThinking,
-    // Zwracamy displayPercent jako convictionLevel dla UI, żeby nie psuć komponentów wizualnych
-    convictionLevel: state.displayPercent, 
-    rawScore: state.convictionLevel, // Dostęp do surowego wyniku jakby był potrzebny
+    convictionLevel: state.displayPercent,
+    rawScore: state.convictionLevel,
     isGameOver: state.isGameOver,
     isWon: state.isWon,
     currentEmotion: state.currentEmotion,
+    gameStats, 
     sendMessage
   };
 };

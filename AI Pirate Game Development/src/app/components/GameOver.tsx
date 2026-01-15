@@ -1,5 +1,5 @@
-import { motion } from "framer-motion";
-import { Lock } from "lucide-react";
+import { motion } from "motion/react";
+import { Skull, RefreshCcw, Bone } from "lucide-react";
 
 interface GameOverProps {
   onRestart: () => void;
@@ -7,70 +7,188 @@ interface GameOverProps {
 
 export function GameOver({ onRestart }: GameOverProps) {
   return (
-    <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#050302] overflow-hidden font-sans text-center px-4">
-      
-      {/* TŁO: Czerwony winieta i kraty */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_0%,_#3e0000_100%)] z-0" />
-      
-      {/* PIONOWE KRATY (Animowane wejście) */}
-      <div className="absolute inset-0 flex justify-around pointer-events-none opacity-30 z-10">
-        {[...Array(6)].map((_, i) => (
-             <motion.div 
-                key={i}
-                initial={{ height: 0 }}
-                animate={{ height: "100%" }}
-                transition={{ delay: 0.2 + i * 0.1, duration: 0.5 }}
-                className="w-4 h-full bg-gradient-to-b from-[#2a1b12] via-[#000] to-[#2a1b12] shadow-2xl" 
-             />
-        ))}
-      </div>
+    <div className="min-h-screen bg-[#0a0505] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      {/* TŁO: KRWAWA GŁĘBIA */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: `
+            radial-gradient(circle at 50% 40%, rgba(69, 10, 10, 0.4) 0%, rgba(0,0,0,1) 90%),
+            repeating-linear-gradient(45deg, #1a0505 0px, #0f0202 20px)
+          `,
+        }}
+      />
 
-      <div className="relative z-20 flex flex-col items-center max-w-2xl w-full">
-        
-        {/* IKONA KŁÓDKI (Trzęsąca się) */}
+      {/* BĄBELKI POWIETRZA (TONIĘCIE) */}
+      {[...Array(20)].map((_, i) => (
         <motion.div
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: "spring", stiffness: 200 }}
-            className="mb-8 relative"
-        >
-            <div className="absolute inset-0 bg-red-600 blur-[50px] opacity-20 animate-pulse" />
-            <motion.div
-                animate={{ x: [-5, 5, -5, 5, 0] }}
-                transition={{ repeat: Infinity, repeatDelay: 2, duration: 0.5 }}
-            >
-                <Lock size={120} className="text-[#c2410c] drop-shadow-[0_10px_10px_rgba(0,0,0,0.8)]" />
-            </motion.div>
-        </motion.div>
+          key={i}
+          className="absolute rounded-full border border-gray-600/30 bg-gray-500/10"
+          style={{
+            left: `${Math.random() * 100}%`,
+            width: Math.random() * 40 + 10,
+            height: Math.random() * 40 + 10,
+          }}
+          initial={{ y: "110vh", opacity: 0 }}
+          animate={{ 
+            y: "-10vh", 
+            opacity: [0, 0.4, 0],
+            x: [0, Math.random() * 50 - 25, 0]
+          }}
+          transition={{
+            duration: Math.random() * 10 + 5,
+            repeat: Infinity,
+            delay: Math.random() * 5,
+            ease: "linear",
+          }}
+        />
+      ))}
 
-        {/* NAGŁÓWEK */}
-        <motion.h1 
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="text-6xl md:text-8xl text-[#c2410c] mb-4" 
-            style={{ fontFamily: "'Pirata One', cursive", textShadow: "4px 4px 0px #000" }}
+      {/* WODA ZALEWAJĄCA EKRAN (CIENIE NA DOLE) */}
+      <motion.div 
+        className="absolute bottom-0 left-0 right-0 h-[40vh] bg-gradient-to-t from-blue-900/20 to-transparent pointer-events-none"
+        initial={{ opacity: 0, height: 0 }}
+        animate={{ opacity: 1, height: "40vh" }}
+        transition={{ duration: 4 }}
+      />
+
+      {/* --- GŁÓWNA ZAWARTOŚĆ --- */}
+      <div className="relative z-10 flex flex-col items-center w-full max-w-4xl">
+        
+        {/* TYTUŁ (GIGANT) */}
+        <motion.h1
+          className="mb-8 md:mb-16 text-center"
+          style={{
+            fontFamily: "'Pirata One', cursive",
+            fontSize: "clamp(4rem, 12vw, 8rem)",
+            color: "#DC2626", // Czerwień
+            textShadow: "0 0 30px rgba(220, 38, 38, 0.5), 6px 6px 0px #000",
+            lineHeight: 1,
+            letterSpacing: "4px"
+          }}
+          initial={{ y: -50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.2 }}
         >
-            PORAŻKA
+          KONIEC GRY
         </motion.h1>
 
-        <motion.p 
+        {/* IKONA ŚMIERCI (STOSOWNY GIGANT) */}
+        <motion.div
+          className="relative mb-16 md:mb-24 group cursor-default"
+          initial={{ scale: 0, rotate: -180 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 60, damping: 12, delay: 0.3 }}
+        >
+          {/* Poświata za czaszką */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-red-600/20 blur-[80px] rounded-full animate-pulse" />
+
+{/* IKONA ŚMIERCI - JOLLY ROGER */}
+        <motion.div
+          className="relative mb-20 md:mb-28 group cursor-default"
+          initial={{ scale: 0, rotate: -180 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 60, damping: 12, delay: 0.3 }}
+        >
+          {/* Mroczna poświata */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-red-900/30 blur-[100px] rounded-full animate-pulse" />
+
+          {/* Kontener czaszki i kości */}
+          <div className="relative flex items-center justify-center">
+             
+             {/* Piszczele (Tło) */}
+             <div className="absolute opacity-80">
+                <Bone 
+                    size={320} 
+                    className="absolute text-[#3f0e0e] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45" 
+                    strokeWidth={2.5}
+                />
+                <Bone 
+                    size={320} 
+                    className="absolute text-[#3f0e0e] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-45" 
+                    strokeWidth={2.5}
+                />
+             </div>
+
+             {/* Czaszka (Przód) */}
+             <div className="relative z-10 drop-shadow-[0_10px_10px_rgba(0,0,0,1)]">
+                <Skull 
+                    size={260} 
+                    className="text-[#2a0a0a] fill-[#1a0505]" // Wypełniona ciemnym kolorem
+                    strokeWidth={1.5}
+                />
+                
+                {/* Świecące oczy */}
+                <motion.div 
+                    className="absolute top-[38%] left-[27%] w-[13%] h-[15%] bg-red-600 rounded-full blur-[6px] mix-blend-screen"
+                    animate={{ opacity: [0.6, 1, 0.6], scale: [1, 1.2, 1] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                />
+                <motion.div 
+                    className="absolute top-[38%] right-[27%] w-[13%] h-[15%] bg-red-600 rounded-full blur-[6px] mix-blend-screen"
+                    animate={{ opacity: [0.6, 1, 0.6], scale: [1, 1.2, 1] }}
+                    transition={{ duration: 2, repeat: Infinity, delay: 0.2 }}
+                />
+             </div>
+          </div>
+
+          {/* Napis R.I.P */}
+          <motion.div 
+            className="absolute -bottom-16 left-1/2 -translate-x-1/2 whitespace-nowrap"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="text-xl md:text-2xl text-gray-400 mb-10 font-serif max-w-lg"
-        >
-            "Pirat przejrzał Twoje sztuczki. Skarb pozostaje bezpiecznie zamknięty pod pokładem."
-        </motion.p>
+            transition={{ delay: 1 }}
+          >
+            <span className="text-red-900/40 font-serif font-bold text-4xl tracking-[1em] ml-4">R.I.P</span>
+          </motion.div>
+        </motion.div>
+        </motion.div>
 
-        {/* PRZYCISK */}
-        <motion.button
-            onClick={onRestart}
-            whileHover={{ scale: 1.05, backgroundColor: "#b91c1c" }}
-            whileTap={{ scale: 0.95 }}
-            className="bg-[#7f1d1d] text-white px-10 py-4 rounded-lg font-bold text-lg md:text-xl border-2 border-[#fca5a5] shadow-[0_0_20px_rgba(220,38,38,0.3)] transition-colors z-30 cursor-pointer"
+        {/* KOMUNIKAT O PORAŻCE */}
+        <motion.div
+          className="relative w-full mb-15 max-w-2xl"
+          initial={{ opacity: 0, y: 50 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
         >
-            SPRÓBUJ PONOWNIE ↺
+          <div className="bg-[#1a0505] p-8 md:p-10 rounded-2xl border-[6px] border-[#450a0a] shadow-[0_0_40px_rgba(0,0,0,0.9)] text-center relative overflow-hidden">
+            {/* Pęknięcia */}
+            <div className="absolute top-0 left-0 w-24 h-10 border-t-2 border-l-2 border-red-900/30 rounded-tl-xl" />
+            <div className="absolute bottom-0 right-0 w-24 h-10 border-b-2 border-r-2 border-red-900/30 rounded-br-xl" />
+
+            <h2
+              className="text-3xl md:text-5xl text-red-600 mb-5"
+              style={{ fontFamily: "'Pirata One', cursive" }}
+            >
+              Cierpliwość się skończyła!
+            </h2>
+            <p className="text-red-200/60 font-serif italic text-xl md:text-2xl leading-relaxed">
+              "Twoje słowa nie przekonały kapitana. <br />
+              Teraz karmisz ryby na dnie oceanu..."
+            </p>
+          </div>
+        </motion.div>
+
+        {/* PRZYCISK RESTART - GIGANT (Styl spójny z Victory, ale czerwony) */}
+        <motion.button
+          onClick={onRestart}
+          className="group relative px-10 py-5 bg-[#450a0a] rounded-2xl border-4 border-red-600 shadow-[0_0_30px_rgba(220,38,38,0.15)] hover:shadow-[0_0_50px_rgba(220,38,38,0.4)] transition-all mt-4 w-full max-w-lg"
+          initial={{ y: 50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.7 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <div className="flex items-center justify-center gap-4">
+            <RefreshCcw size={32} className="text-red-500 group-hover:-rotate-180 transition-transform duration-500" />
+            <span
+              style={{ fontFamily: "'Pirata One', cursive" }}
+              className="text-3xl md:text-4xl text-red-500 tracking-wider group-hover:text-red-400 transition-colors"
+            >
+              SPRÓBUJ PONOWNIE
+            </span>
+          </div>
+          <div className="absolute inset-0 border border-red-500/20 rounded-xl m-1 pointer-events-none" />
         </motion.button>
       </div>
     </div>

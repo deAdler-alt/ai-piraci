@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { Send, Lightbulb, Lock, Mic, Skull, Flag } from "lucide-react";
-import { useGameEngine } from "../hooks/useGameEngine";
+import { GameStats, useGameEngine } from "../hooks/useGameEngine";
 import { Character, Message } from "../../core/types";
 
 interface GameInterfaceProps {
   selectedCharacter: Character;
-  onVictory: () => void;
+  onVictory: (stats: GameStats) => void;
   onGameOver: () => void;
 }
 
