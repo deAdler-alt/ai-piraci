@@ -5,7 +5,8 @@ import { gameService } from '../../services/game.service';
 interface GameState {
   messages: Message[];
   isThinking: boolean;
-  convictionLevel: number;
+  convictionLevel: number; // To jest surowy wynik z backendu (-100 do 100)
+  displayPercent: number;  // To jest wynik przeliczony na % dla paska (0 do 100)
   isGameOver: boolean;
   isWon: boolean;
   gameId: string | null;
@@ -17,7 +18,8 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
   const [state, setState] = useState<GameState>({
     messages: [],
     isThinking: false,
-    convictionLevel: 50, // STARTUJEMY Z 50%
+    convictionLevel: 0,   // Startujemy od 0 (neutralnie w nowej skali -100..100)
+    displayPercent: 50,   // Wizualnie to środek paska
     isGameOver: false,
     isWon: false,
     gameId: null,
@@ -25,17 +27,22 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
     turnCount: 0
   });
 
-  // --- FUNKCJA CZYSZCZĄCA (SANITIZER) ---
+  // --- POMOCNICZE: Mapowanie skali -100..100 na 0..100% ---
+  const mapScoreToPercent = (backendScore: number) => {
+    // Zabezpieczenie zakresu
+    const clamped = Math.max(-100, Math.min(100, backendScore));
+    // Przeliczenie: -100 -> 0, 0 -> 50, 100 -> 100
+    return Math.round((clamped + 100) / 2);
+  };
+
   const sanitizeResponse = (rawText: string) => {
     let emotion = "idle";
     const upperText = rawText.toUpperCase();
     
-    // Prosta detekcja emocji
     if (upperText.includes("HAPPY") || upperText.includes("RADOŚĆ")) emotion = "happy";
     else if (upperText.includes("ANGRY") || upperText.includes("ZŁOŚĆ")) emotion = "angry";
     else if (upperText.includes("THINKING") || upperText.includes("MYŚLI")) emotion = "thinking";
     
-    // Brutalne wycinanie tagów [] () * *
     let cleanText = rawText
         .replace(/\[.*?\]/g, "") 
         .replace(/\(.*?\)/g, "")
@@ -52,10 +59,9 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
     let mounted = true;
     const initGame = async () => {
       try {
-        // TWARDY RESET - ZAWSZE 50% NA START
         setState({ 
             messages: [], isGameOver: false, isWon: false, 
-            convictionLevel: 50, isThinking: true, 
+            convictionLevel: 0, displayPercent: 50, isThinking: true, 
             currentEmotion: "idle", turnCount: 0, gameId: null 
         });
 
@@ -64,7 +70,8 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
         if (mounted) {
           setState(prev => ({ 
             ...prev, gameId: data.game_id, 
-            convictionLevel: 50, // IGNORUJEMY to co zwrócił backend na start
+            convictionLevel: 0, 
+            displayPercent: 50,
             isThinking: false 
           }));
         }
@@ -87,7 +94,7 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
 
     setState(prev => ({
       ...prev, messages: [...prev.messages, userMsg], isThinking: true, currentEmotion: "thinking", 
-      turnCount: prev.turnCount + 1 // Podbijamy licznik tur
+      turnCount: prev.turnCount + 1
     }));
 
     try {
@@ -100,43 +107,53 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
         isPlayer: false, timestamp: Date.now(), type: 'text' 
       };
 
-      setState(prev => {
-        let score = response.merit_score;
-        const currentTurn = prev.turnCount;
+      // --- AUDIO SYNC: Opóźniamy aktualizację stanu o 1s (lub więcej), 
+      // żeby tekst nie pojawił się przed dźwiękiem ---
+      // W idealnym świecie backend zwróciłby "audio duration" lub streamował,
+      // ale przy prostym setupie opóźnienie "na sztywno" to dobry hack.
+      
+      const AUDIO_DELAY_MS = 1200; // 1.2 sekundy opóźnienia tekstu
 
-        // --- OKRES OCHRONNY (IMMUNITY) ---
-        // Przez pierwsze 2 tury NIE MOŻNA PRZEGRAĆ, nawet jak score spadnie do 0.
-        const isSafePeriod = currentTurn < 2;
+      setTimeout(() => {
+        setState(prev => {
+            const rawScore = response.merit_score; // Skala -100 do 100
+            const percentScore = mapScoreToPercent(rawScore);
+            const currentTurn = prev.turnCount;
 
-        if (isSafePeriod && score <= 10) {
-            score = 30; // Sztucznie podtrzymujemy życie wizualnie
-        }
+            // Okres ochronny (2 tury)
+            const isSafePeriod = currentTurn < 2;
 
-        // --- WARUNKI KOŃCOWE ---
-        // 1. Wygrana: Backend = TAK + Wysoki Wynik + Min. 2 tury
-        const validWin = response.is_won && score > 60 && !isSafePeriod;
-        
-        // 2. Przegrana: Wynik = 0 + To NIE jest okres ochronny
-        const validLoss = !validWin && score <= 0 && !isSafePeriod;
+            // Warunki wygranej
+            // Zakładamy, że wygrana w nowej skali to np. > 60 (czyli 80% na pasku)
+            const validWin = response.is_won && rawScore > 40 && !isSafePeriod;
+            const validLoss = !validWin && rawScore <= -90 && !isSafePeriod; // Przegrana przy -90
 
-        if (validWin && onVictory) setTimeout(onVictory, 2000);
+            if (validWin && onVictory) setTimeout(onVictory, 2500); // Dłuższy czas na przeczytanie
 
-        return {
-          ...prev,
-          messages: [...prev.messages, pirateMsg],
-          convictionLevel: score,
-          isWon: validWin,
-          isGameOver: validWin || validLoss, // Tu blokujemy przegraną w safe period
-          isThinking: false,
-          currentEmotion: validWin ? "happy" : (validLoss ? "angry" : emotion)
-        };
-      });
+            // Odtwórz audio (jeśli backend zwraca URL)
+            if (response.audio_url) {
+                const audio = new Audio(response.audio_url);
+                audio.play().catch(e => console.warn("Autoplay audio blocked", e));
+            }
+
+            return {
+            ...prev,
+            messages: [...prev.messages, pirateMsg],
+            convictionLevel: rawScore,
+            displayPercent: percentScore, // Używamy przeliczonego %
+            isWon: validWin,
+            isGameOver: validWin || validLoss,
+            isThinking: false,
+            currentEmotion: validWin ? "happy" : (validLoss ? "angry" : emotion)
+            };
+        });
+      }, AUDIO_DELAY_MS);
 
     } catch (error) {
       console.error("Chat error:", error);
       setState(prev => ({ 
         ...prev, isThinking: false, currentEmotion: "angry",
-        messages: [...prev.messages, { id: Date.now().toString(), text: "☠️ (Błąd komunikacji)", isPlayer: false, timestamp: Date.now(), type: 'system' }] 
+        messages: [...prev.messages, { id: Date.now().toString(), text: "☠️ (Papuga zjadła kabel)", isPlayer: false, timestamp: Date.now(), type: 'system' }] 
       }));
     }
   };
@@ -144,7 +161,9 @@ export const useGameEngine = (character: Character, onVictory?: () => void) => {
   return {
     messages: state.messages,
     isThinking: state.isThinking,
-    convictionLevel: state.convictionLevel,
+    // Zwracamy displayPercent jako convictionLevel dla UI, żeby nie psuć komponentów wizualnych
+    convictionLevel: state.displayPercent, 
+    rawScore: state.convictionLevel, // Dostęp do surowego wyniku jakby był potrzebny
     isGameOver: state.isGameOver,
     isWon: state.isWon,
     currentEmotion: state.currentEmotion,

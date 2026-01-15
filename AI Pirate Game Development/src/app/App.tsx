@@ -15,6 +15,7 @@ import { GameInterface } from "./components/GameInterface";
 import { GameOver } from "./components/GameOver";
 import { Victory } from "./components/Victory";
 import { RulesModal } from "./components/RulesModal";
+import { EducationalOutro } from "./components/EducationalOutro";
 
 import { useInactivity } from "./hooks/useInactivity";
 
@@ -24,12 +25,14 @@ type GameScreen =
   | "character-selection"
   | "game"
   | "game-over"
-  | "victory";
+  | "victory"
+  | "educational-outro";
 
 export default function App() {
   // --- STATE ---
   const [currentScreen, setCurrentScreen] = useState<GameScreen>("landing");
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
+  const [gameOutcome, setGameOutcome] = useState<"win" | "loss">("win");
   
   // Audio State
   const [isMuted, setIsMuted] = useState(false);
@@ -50,41 +53,78 @@ export default function App() {
     }
   });
 
+
+
+  // =================================================================
+  // 🛠️ DEV ROUTER - TYLKO DO TESTÓW LOKALNYCH
+
+// http://localhost:5173/victory -> Od razu widzisz ekran wygranej (skrzynia, monety).
+
+// http://localhost:5173/game-over -> Widzisz ekran przegranej (kłódki).
+
+// http://localhost:5173/educational-outro -> Widzisz napisy końcowe Star Wars.
+
+// http://localhost:5173/ -> Standardowy start (Landing Page).
+
+  useEffect(() => {
+    // Pobieramy to co jest po slashu, np. "victory" z "localhost:5173/victory"
+    const path = window.location.pathname.replace("/", "");
+
+    if (path === "victory") {
+        setGameOutcome("win"); // Ustawiamy wynik na wygraną (dla Outro)
+        setCurrentScreen("victory");
+    } 
+    else if (path === "game-over") {
+        setGameOutcome("loss"); // Ustawiamy wynik na przegraną
+        setCurrentScreen("game-over");
+    } 
+    else if (path === "educational-outro") {
+        setGameOutcome("win"); // Domyślnie pokazujemy wersję WIN
+        setCurrentScreen("educational-outro");
+    }
+    // Jeśli chcesz testować grę bez wybierania postaci (Mock Character)
+    else if (path === "game") {
+        setSelectedCharacter({
+            id: "mock-pirate",
+            name: "Testowy Pirat",
+            description: "To jest pirat testowy.",
+            difficulty: "easy",
+        });
+        setCurrentScreen("game");
+    }
+  }, []);
+  
+  // =================================================================
+
+
+
+
   // =================================================================
   // 🎵 AUDIO MANAGER
   // =================================================================
-
   useEffect(() => {
     if (audioRef.current) {
-      // Muzyka cichsza podczas gry i na ekranach końcowych
-      const isQuietScreen = ["game", "victory", "game-over"].includes(currentScreen);
-      
+      const isQuietScreen = ["game", "victory", "game-over", "educational-outro"].includes(currentScreen);
       const volumeModifier = isQuietScreen ? 0.2 : 1.0;
-      const targetVolume = bgVolume * volumeModifier;
-      
-      audioRef.current.volume = Math.max(0, Math.min(1, targetVolume));
+      audioRef.current.volume = Math.max(0, Math.min(1, bgVolume * volumeModifier));
 
-      if (isMuted) {
-        audioRef.current.pause();
-      } else if (audioRef.current.paused) {
-        audioRef.current.play().catch(() => { /* Autoplay block ignore */ });
-      }
+      if (isMuted) audioRef.current.pause();
+      else if (audioRef.current.paused) audioRef.current.play().catch(() => {});
     }
   }, [isMuted, bgVolume, currentScreen]);
 
   useEffect(() => {
     if (isMuted) return;
-
     if (currentScreen === "game-over") {
-        const loseAudio = new Audio("/sounds/lose.mp3");
-        loseAudio.volume = 0.8;
-        loseAudio.play().catch((e) => console.warn("Audio error", e));
+        new Audio("/sounds/lose.mp3").play().catch(console.warn);
+    } else if (currentScreen === "victory") {
+        new Audio("/sounds/win.mp3").play().catch(console.warn); // Opcjonalnie, jeśli masz win.mp3
     }
   }, [currentScreen, isMuted]);
 
   const handleStartMusic = () => {
     if (audioRef.current && !isMuted) {
-      audioRef.current.play().catch((e) => console.error("Start music error:", e));
+      audioRef.current.play().catch(console.error);
     }
   };
 
@@ -102,82 +142,54 @@ export default function App() {
     setCurrentScreen("game");
   };
 
-  // Logika zwycięstwa: Od razu ekran wygranej
-  const handleGameWon = () => setCurrentScreen("victory");
+  const handleGameWon = () => {
+      setGameOutcome("win");
+      setCurrentScreen("victory");
+  };
   
-  const handleGameOver = () => setCurrentScreen("game-over");
+  const handleGameOver = () => {
+      setGameOutcome("loss");
+      setCurrentScreen("game-over");
+  };
   
-  const handleRestart = () => {
+  const handleProceedToOutro = () => {
+    setCurrentScreen("educational-outro");
+  };
+
+  const handleBackToMenu = () => {
     setCurrentScreen("landing");
     setSelectedCharacter(null);
   };
-  
+
+
   // =================================================================
   // 🖥️ RENDER
   // =================================================================
   return (
     <div className="min-h-screen bg-[#050302] font-sans text-white relative overflow-hidden">
-      {/* GLOBAL AUDIO PLAYER */}
       <audio ref={audioRef} loop src="/sounds/bg_music.mp3" />
 
-      {/* --- PIRACKI PANEL AUDIO (PRAWY DÓŁ) --- */}
-      <div 
-        className="fixed bottom-6 right-6 z-[100] flex items-center gap-2"
-        onMouseEnter={() => setShowVolumeSlider(true)}
-        onMouseLeave={() => setShowVolumeSlider(false)}
-      >
-        <AnimatePresence>
-            {showVolumeSlider && (
-                <motion.div 
-                    initial={{ width: 0, opacity: 0, x: 20 }}
-                    animate={{ width: "auto", opacity: 1, x: 0 }}
-                    exit={{ width: 0, opacity: 0, x: 20 }}
-                    className="overflow-hidden"
-                >
-                    <div 
-                        className="flex items-center px-4 py-2 rounded-l-lg border-y-2 border-l-2 border-[#FFD700] shadow-xl mr-[-10px] pr-6"
-                        style={{
-                            backgroundColor: "#5d4037",
-                            backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 4px, rgba(0,0,0,0.2) 5px)",
-                        }}
-                    >
-                        <input 
-                            type="range" 
-                            min="0" max="1" step="0.05" 
-                            value={bgVolume} 
-                            onChange={(e) => {
-                                setBgVolume(parseFloat(e.target.value));
-                                if (isMuted && parseFloat(e.target.value) > 0) setIsMuted(false);
-                            }}
-                            className="w-24 h-2 rounded-lg appearance-none cursor-pointer bg-[#2a1b12] shadow-inner accent-[#FFD700]"
-                        />
-                    </div>
-                </motion.div>
-            )}
-        </AnimatePresence>
-
-        <motion.button 
-            onClick={() => setIsMuted(!isMuted)} 
-            whileHover={{ scale: 1.1, rotate: 5 }}
-            whileTap={{ scale: 0.95 }}
-            className="relative w-14 h-14 rounded-full border-4 shadow-[0_4px_10px_rgba(0,0,0,0.6)] flex items-center justify-center z-20 overflow-hidden"
-            style={{
-                backgroundColor: isMuted ? "#7f1d1d" : "#5d4037",
-                borderColor: "#FFD700",
-            }}
+      {/* --- AUDIO CONTROLS --- */}
+      {currentScreen !== "educational-outro" && (
+        <div 
+            className="fixed bottom-6 right-6 z-[100] flex items-center gap-2"
+            onMouseEnter={() => setShowVolumeSlider(true)}
+            onMouseLeave={() => setShowVolumeSlider(false)}
         >
-             <div
-                className="absolute inset-0 opacity-30 pointer-events-none"
-                style={{
-                  backgroundImage:
-                    "repeating-linear-gradient(45deg, transparent, transparent 5px, #000 5px, #000 7px)",
-                }}
-            />
-            <div className="relative z-10 text-[#FFD700] drop-shadow-md">
-                {isMuted ? <VolumeX size={28} /> : <Volume2 size={28} />}
-            </div>
-        </motion.button>
-      </div>
+            <AnimatePresence>
+                {showVolumeSlider && (
+                    <motion.div initial={{ width: 0, opacity: 0, x: 20 }} animate={{ width: "auto", opacity: 1, x: 0 }} exit={{ width: 0, opacity: 0, x: 20 }} className="overflow-hidden">
+                        <div className="flex items-center px-4 py-2 rounded-l-lg border-y-2 border-l-2 border-[#FFD700] shadow-xl mr-[-10px] pr-6" style={{ backgroundColor: "#5d4037" }}>
+                            <input type="range" min="0" max="1" step="0.05" value={bgVolume} onChange={(e) => { setBgVolume(parseFloat(e.target.value)); if (isMuted && parseFloat(e.target.value) > 0) setIsMuted(false); }} className="w-24 h-2 rounded-lg appearance-none cursor-pointer bg-[#2a1b12] accent-[#FFD700]" />
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+            <motion.button onClick={() => setIsMuted(!isMuted)} whileHover={{ scale: 1.1, rotate: 5 }} whileTap={{ scale: 0.95 }} className="relative w-14 h-14 rounded-full border-4 shadow-xl flex items-center justify-center z-20 overflow-hidden" style={{ backgroundColor: isMuted ? "#7f1d1d" : "#5d4037", borderColor: "#FFD700" }}>
+                <div className="relative z-10 text-[#FFD700]">{isMuted ? <VolumeX size={28} /> : <Volume2 size={28} />}</div>
+            </motion.button>
+        </div>
+      )}
 
       {/* --- EKRANY GRY --- */}
 
@@ -206,14 +218,22 @@ export default function App() {
       )}
 
       {currentScreen === "game-over" && (
-        <GameOver onRestart={handleRestart} />
+        <GameOver onRestart={handleProceedToOutro} />
       )}
       
       {currentScreen === "victory" && (
-        <Victory onRestart={handleRestart} isMuted={isMuted} />
+        <Victory onRestart={handleProceedToOutro} isMuted={isMuted} />
+      )}
+
+      {currentScreen === "educational-outro" && (
+          <EducationalOutro 
+            outcome={gameOutcome} 
+            onFinish={handleBackToMenu} 
+          />
       )}
       
       <RulesModal isOpen={showRules} onClose={() => setShowRules(false)} />
     </div>
   );
 }
+
