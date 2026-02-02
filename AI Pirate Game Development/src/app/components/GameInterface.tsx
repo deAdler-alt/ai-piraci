@@ -14,7 +14,9 @@ type UIMessage = Omit<Message, 'type'> & { type?: 'system' | 'text' };
 
 export function GameInterface({ selectedCharacter, onVictory, onGameOver }: GameInterfaceProps) {
   
-  const engine = useGameEngine(selectedCharacter, onVictory); 
+  // 🔥 POPRAWKA: Dodaliśmy onGameOver tutaj 👇
+  const engine = useGameEngine(selectedCharacter, onVictory, onGameOver); 
+  
   const [inputValue, setInputValue] = useState("");
   const [hintsLeft, setHintsLeft] = useState(3);
   const [isListening, setIsListening] = useState(false);
@@ -76,6 +78,7 @@ export function GameInterface({ selectedCharacter, onVictory, onGameOver }: Game
     defeated: { rotate: [0, 5, -5, 0], filter: "sepia(1)", transition: { duration: 2 } }
   };
 
+  // Dodatkowe zabezpieczenie: jeśli engine ustawi isGameOver, a my wciąż tu jesteśmy, odpal callback
   useEffect(() => {
     if (engine.isGameOver && !engine.isWon) {
         onGameOver();
@@ -87,8 +90,6 @@ export function GameInterface({ selectedCharacter, onVictory, onGameOver }: Game
   return (
     <div className="min-h-screen bg-[#1a0f0a] relative flex flex-col overflow-hidden">
       
-      {/* 🛑 TUTAJ NIE MA MAPY. USUNIĘTO WSZYSTKIE ŚLADY. */}
-
       <div className="absolute inset-0 opacity-30 pointer-events-none" style={{ backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 49px, #000 50px)" }} />
 
       {/* --- GÓRNY PASEK --- */}

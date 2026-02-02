@@ -37,9 +37,10 @@ export const useGameEngine = (character: Character, onVictory?: (stats: GameStat
 
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // --- STATYSTYKI ---
+  // --- STATYSTYKI (Frontendowa wizualizacja) ---
   const calculateStats = (percent: number, turns: number): GameStats => {
     const technique = percent;
+    // Bonus za styl: Im mniej tur, tym więcej punktów (max 20)
     let style = 20 - Math.max(0, (turns - 3) * 2);
     if (style < 0) style = 0;
     
@@ -56,6 +57,8 @@ export const useGameEngine = (character: Character, onVictory?: (stats: GameStat
   };
 
   const mapScoreToPercent = (backendScore: number) => {
+    // Backend daje wynik od -100 do 100.
+    // Mapujemy to na 0-100 dla paska postępu w UI.
     const clamped = Math.max(-100, Math.min(100, backendScore));
     return Math.round((clamped + 100) / 2);
   };
@@ -110,23 +113,24 @@ export const useGameEngine = (character: Character, onVictory?: (stats: GameStat
       const { emotion, cleanText } = sanitizeResponse(response.pirate_response);
       const pirateMsg: Message = { id: (Date.now() + 1).toString(), text: cleanText, isPlayer: false, timestamp: Date.now(), type: 'text' };
 
-      // 3. Pobranie twardych danych z backendu
+      // 3. ODBIÓR FLAG Z BACKENDU (SOURCE OF TRUTH)
       const isWin = response.is_won;   
       const isLoss = response.is_lost; 
+      
       const rawScore = response.merit_score;
       const percentScore = mapScoreToPercent(rawScore);
       
       const stats = calculateStats(percentScore, state.turnCount + 1);
 
-      // Funkcja pomocnicza: Wyświetlenie tekstu pirata
+      // Funkcja: Wyświetlenie tekstu pirata (BEZ KOŃCZENIA GRY JESZCZE)
       const showTextAndSetState = () => {
         setState(prev => ({
             ...prev,
-            messages: [...prev.messages, pirateMsg], 
+            messages: [...prev.messages, pirateMsg], // Dodajemy tekst
             convictionLevel: rawScore,
             displayPercent: percentScore,
-            // WAŻNE: Tu wstrzymujemy zmianę flag isWon/isGameOver!
-            // Dzięki temu UI się nie przełączy, dopóki pirat nie skończy mówić.
+            // WAŻNE: Tu wstrzymujemy zmianę flag isWon/isGameOver w UI!
+            // Dzięki temu interfejs nie znika, a pirat może mówić.
             isWon: false, 
             isGameOver: false, 
             isThinking: false, 
@@ -134,9 +138,10 @@ export const useGameEngine = (character: Character, onVictory?: (stats: GameStat
         }));
       };
 
-      // Funkcja pomocnicza: FAKTYCZNY Koniec gry (zmiana ekranu)
+      // Funkcja: FAKTYCZNY Koniec gry (zmiana ekranu)
+      // Wywołamy to dopiero po zakończeniu audio
       const handleGameEnd = () => {
-        // Dopiero tutaj decydujemy o zmianie ekranu
+        console.log("🏁 Weryfikacja końca gry:", { isWin, isLoss });
         if (isWin && onVictory) {
             onVictory(stats);
         } else if (isLoss && onGameOver) {
@@ -149,34 +154,35 @@ export const useGameEngine = (character: Character, onVictory?: (stats: GameStat
           const audio = new Audio(response.audio_url);
           currentAudioRef.current = audio;
 
+          // A. START: Pokaż tekst dopiero gdy audio faktycznie ruszy (synchronizacja startu)
           audio.onplay = () => {
-              showTextAndSetState(); // Pokaż tekst, ale nie kończ gry
+              showTextAndSetState();
           };
 
-          // Kluczowy moment: Czekamy na koniec audio!
+          // B. KONIEC: Zmień ekran dopiero gdy skończy gadać (synchronizacja końca)
           audio.onended = () => {
-              handleGameEnd(); // TERAZ kończymy grę
+              handleGameEnd();
           };
 
+          // C. BŁĄD: Jeśli audio nie działa, pokaż tekst i zakończ z opóźnieniem
           audio.onerror = () => {
               console.warn("Audio error, fallback to text.");
               showTextAndSetState();
-              // Jeśli błąd audio, dajemy czas na przeczytanie przed wyrzuceniem ekranu
-              setTimeout(handleGameEnd, 3000);
+              setTimeout(handleGameEnd, 3000); // Czytaj przez 3 sekundy
           };
 
+          // Próba odtworzenia
           audio.play().catch(err => {
               console.warn("Autoplay blocked:", err);
-              showTextAndSetState();
-              setTimeout(handleGameEnd, 4000);
+              showTextAndSetState(); 
+              setTimeout(handleGameEnd, 4000); 
           });
 
       } else {
-          // Brak audio (fallback)
+          // Brak audio (fallback) - symulujemy czas czytania
           showTextAndSetState();
-          const readTime = 1500 + (cleanText.length * 50);
-          // Czekamy obliczony czas zanim wyrzucimy ekran końca gry
-          setTimeout(handleGameEnd, Math.min(readTime, 5000));
+          const readTime = 1500 + (cleanText.length * 50); // 1.5s + czas na znaki
+          setTimeout(handleGameEnd, Math.min(readTime, 5000)); // Max 5s
       }
 
     } catch (error) {
